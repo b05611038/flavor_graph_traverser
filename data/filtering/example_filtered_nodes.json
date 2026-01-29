@@ -1,0 +1,43 @@
+{
+  "metadata": {
+    "total_nodes": 6,
+    "filtered_nodes": 3,
+    "percentage": "50.0%",
+    "config": {
+      "require_leaf_node": true,
+      "min_depth": 2,
+      "excluded_root_categories": ["other"],
+      "excluded_keywords": ["ROOT:", "overall"]
+    }
+  },
+  "nodes_by_category": {
+    "fruity": [
+      {
+        "name": "apple",
+        "depth": 2,
+        "is_leaf": true,
+        "root_category": "fruity",
+        "parent": "fruity",
+        "siblings": []
+      }
+    ],
+    "floral": [
+      {
+        "name": "rose",
+        "depth": 2,
+        "is_leaf": true,
+        "root_category": "floral",
+        "parent": "floral",
+        "siblings": ["jasmine"]
+      },
+      {
+        "name": "jasmine",
+        "depth": 2,
+        "is_leaf": true,
+        "root_category": "floral",
+        "parent": "floral",
+        "siblings": ["rose"]
+      }
+    ]
+  }
+}

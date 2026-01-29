@@ -1,0 +1,19 @@
+{
+  "graph_name": "example_graph",
+  "root": "ROOT:EXAMPLE",
+  "descriptions": [
+    "ROOT:EXAMPLE",
+    "fruity",
+    "floral",
+    "apple",
+    "rose",
+    "jasmine"
+  ],
+  "connections": [
+    ["ROOT:EXAMPLE", "fruity"],
+    ["ROOT:EXAMPLE", "floral"],
+    ["fruity", "apple"],
+    ["floral", "rose"],
+    ["floral", "jasmine"]
+  ]
+}

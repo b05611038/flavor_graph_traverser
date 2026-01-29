@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Mac
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+
+# Private data files (exclude real data)
+data/graphs/*.pkl
+data/graphs/system_graph_data.json
+data/filtering/filtered_nodes_review.json
+data/filtering/blacklist.txt
+data/filtering/whitelist.txt
+data/questions/questions_complete.json
+data/questions/sample_questions.json
+
+# But include example files
+!data/graphs/example_graph.pkl
+!data/filtering/example_filtered_nodes.json
+!data/filtering/example_blacklist.txt
+!data/filtering/example_whitelist.txt
+!data/questions/example_questions.json
+
+# Reference code (internal)
+reference_code/

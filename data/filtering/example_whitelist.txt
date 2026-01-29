@@ -1,0 +1,6 @@
+# Example whitelist file
+# Add nodes that should be included even if filtered out (one per line)
+# These nodes will be force-included in the filtered set
+
+honey
+vanilla

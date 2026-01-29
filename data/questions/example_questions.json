@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "total_questions": 3,
+    "graph_source": "example_graph",
+    "generation_date": "2024-01-29"
+  },
+  "questions": [
+    {
+      "id": "A1_001",
+      "type": "A1",
+      "category": "taxonomic_reasoning",
+      "question": "Which root category does 'apple' belong to?",
+      "target": "apple",
+      "answer": "fruity",
+      "distractors": ["floral", "sweet", "spicy"]
+    },
+    {
+      "id": "A2_001",
+      "type": "A2",
+      "category": "taxonomic_reasoning",
+      "question": "Is 'floral' an ancestor of 'rose'?",
+      "target": "rose",
+      "candidate": "floral",
+      "answer": true
+    },
+    {
+      "id": "E1_001",
+      "type": "E1",
+      "category": "similarity_reasoning",
+      "question": "Rank these flavors by similarity to 'rose': ['apple', 'jasmine', 'caramel']",
+      "target": "rose",
+      "candidates": ["apple", "jasmine", "caramel"],
+      "answer": ["jasmine", "apple", "caramel"]
+    }
+  ]
+}

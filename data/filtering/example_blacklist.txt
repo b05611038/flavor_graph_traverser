@@ -1,0 +1,6 @@
+# Example blacklist file
+# Add problematic nodes here (one per line)
+# These nodes will be excluded from the filtered set
+
+generic term
+abstract concept
