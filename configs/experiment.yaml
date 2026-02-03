@@ -1,0 +1,91 @@
+# Experiment Configuration
+# Main configuration file for running benchmarks
+
+experiment:
+  name: "flavor_hierarchy_reasoning"
+  version: "1.0"
+  random_seed: 42
+
+# Data paths
+data:
+  graph_file: "data/graphs/coffee_flavor_wheel.pkl"
+  questions_file: "data/questions/questions_complete.json"
+
+# Client configuration
+client:
+  # Options: "openrouter" or "ollama"
+  type: "ollama"  # Default to ollama for testing
+
+  # OpenRouter settings
+  openrouter:
+    api_key_env: "OPENROUTER_API_KEY"  # Environment variable name
+    base_url: "https://openrouter.ai/api/v1"
+    site_url: "https://github.com/b05611038/flavor_graph_traverser"
+    app_name: "FlavorGraphTraverser"
+
+  # Ollama settings
+  ollama:
+    base_url: "http://localhost:11434"
+    default_model: "tinyllama"
+
+# Experiment runs
+runs:
+  # Debug run (for testing implementation)
+  debug:
+    enabled: true
+    description: "Quick test with local ollama"
+    client_type: "ollama"
+    models:
+      - "tinyllama"
+    conditions: ["C0", "C2"]
+    max_questions: 5
+    question_types: ["A1"]  # Only test one type
+
+  # Pilot run (small-scale test with real API)
+  pilot:
+    enabled: false
+    description: "Small-scale test with 10 questions"
+    client_type: "openrouter"
+    models:
+      - "openai/gpt-3.5-turbo"
+      - "anthropic/claude-haiku"
+    conditions: ["C0", "C2", "C3"]
+    max_questions: 10
+    question_types: ["A1", "A2", "E1"]
+
+  # Full run (complete benchmark)
+  full:
+    enabled: false
+    description: "Full benchmark with all models and conditions"
+    client_type: "openrouter"
+    models: "all"  # Use all models from models.yaml
+    conditions: ["C0", "C1", "C2", "C3"]
+    max_questions: null  # All questions
+    question_types: null  # All types
+
+# Error handling
+error_handling:
+  max_retries: 3
+  retry_backoff: [2, 4, 8]  # seconds
+  timeout_per_call: 60  # seconds
+
+# Caching
+cache:
+  enabled: true
+  directory: "results/cache"
+  invalidate_on_version_change: true
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  directory: "logs"
+  console_output: true
+  save_turn_logs: true
+  format: "%(asctime)s [%(levelname)s] %(message)s"
+
+# Output
+output:
+  results_directory: "results"
+  save_summary_csv: true
+  save_error_report: true
+  save_turn_logs: true

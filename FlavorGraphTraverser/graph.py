@@ -772,6 +772,244 @@ class CoffeeDescriptionGraph:
             dynamic=self.dynamic,
         )
 
+    def get_parent(self, descriptor: str) -> Optional[str]:
+        """
+        Get the parent of a descriptor (wrapper for parents_of_description).
+
+        Returns the first parent, or None if no parents.
+
+        Args:
+            descriptor: Descriptor name
+
+        Returns:
+            Parent descriptor name or None
+
+        Example:
+            >>> parent = graph.get_parent("chocolate")
+            >>> print(parent)  # 'cocoa'
+        """
+        parents = self.parents_of_description(descriptor)
+        return parents[0] if parents else None
+
+    def get_children(self, descriptor: str) -> List[str]:
+        """
+        Get the children of a descriptor (wrapper for children_of_description).
+
+        Args:
+            descriptor: Descriptor name
+
+        Returns:
+            List of child descriptor names
+
+        Example:
+            >>> children = graph.get_children("cocoa")
+            >>> print(children)  # ['chocolate', 'dark chocolate', ...]
+        """
+        return self.children_of_description(descriptor)
+
+    def get_ancestors(self, descriptor: str) -> List[str]:
+        """
+        Get all ancestors of a descriptor (parents, grandparents, etc.).
+
+        Args:
+            descriptor: Descriptor name
+
+        Returns:
+            List of ancestor descriptor names
+
+        Example:
+            >>> ancestors = graph.get_ancestors("chocolate")
+            >>> print(ancestors)  # ['cocoa', 'nutty/cocoa', 'coffee']
+        """
+        ancestors = []
+        current = descriptor
+
+        while True:
+            parent = self.get_parent(current)
+            if parent is None:
+                break
+            ancestors.append(parent)
+            current = parent
+
+        return ancestors
+
+    def get_root_categories(self) -> List[str]:
+        """
+        Get all root categories (first-level children of the root node).
+
+        Returns:
+            List of root category names
+
+        Example:
+            >>> roots = graph.get_root_categories()
+            >>> print(roots)  # ['fruity', 'floral', 'nutty/cocoa', 'spices', 'roasted']
+        """
+        if self.root is None:
+            return []
+        return self.get_children(self.root)
+
+    def get_leaf_nodes(self) -> List[str]:
+        """
+        Get all leaf nodes (nodes with no children).
+
+        Returns:
+            List of leaf node names
+
+        Example:
+            >>> leaves = graph.get_leaf_nodes()
+            >>> print(len(leaves))  # Number of leaf descriptors
+        """
+        leaf_nodes = []
+        for descriptor in self.descriptions:
+            children = self.get_children(descriptor)
+            if not children:
+                leaf_nodes.append(descriptor)
+        return leaf_nodes
+
+    def get_middle_nodes(self) -> List[str]:
+        """
+        Get all middle nodes (nodes with both parent and children).
+
+        Returns:
+            List of middle node names
+
+        Example:
+            >>> middle = graph.get_middle_nodes()
+            >>> # Returns nodes that are neither root nor leaves
+        """
+        middle_nodes = []
+        for descriptor in self.descriptions:
+            if descriptor == self.root:
+                continue
+            parent = self.get_parent(descriptor)
+            children = self.get_children(descriptor)
+            if parent and children:
+                middle_nodes.append(descriptor)
+        return middle_nodes
+
+    def get_path_distance(self, source: str, target: str) -> Optional[int]:
+        """
+        Get the shortest path distance between two descriptors.
+
+        Args:
+            source: Source descriptor
+            target: Target descriptor
+
+        Returns:
+            Path distance (number of edges) or None if no path exists
+
+        Example:
+            >>> distance = graph.get_path_distance("chocolate", "fruity")
+            >>> print(distance)  # e.g., 4 (number of hops)
+        """
+        if source not in self.descriptions or target not in self.descriptions:
+            return None
+
+        source_idx = self.graph.vs.find(label=source).index
+        target_idx = self.graph.vs.find(label=target).index
+
+        try:
+            # Get shortest path
+            path = self.undirected_graph.get_shortest_paths(
+                source_idx,
+                to=target_idx,
+                mode="all",
+                output="vpath"
+            )
+
+            if not path or not path[0]:
+                return None
+
+            # Distance is path length minus 1 (number of edges)
+            return len(path[0]) - 1
+
+        except:
+            return None
+
+    def get_root_category(self, descriptor: str) -> Optional[str]:
+        """
+        Get the root category that a descriptor belongs to.
+
+        This is the first-level child of the root node in the path
+        from root to descriptor.
+
+        Args:
+            descriptor: Descriptor name
+
+        Returns:
+            Root category name or None if not found
+
+        Example:
+            >>> root_cat = graph.get_root_category("chocolate")
+            >>> print(root_cat)  # 'nutty/cocoa'
+        """
+        if descriptor not in self.descriptions:
+            return None
+
+        if self.root is None:
+            return None
+
+        # Traverse up to find root category
+        ancestors = self.get_ancestors(descriptor)
+
+        if not ancestors:
+            # descriptor might be a root category itself
+            if descriptor in self.get_children(self.root):
+                return descriptor
+            return None
+
+        # Find the ancestor that is a child of root
+        root_children = set(self.get_children(self.root))
+
+        # Traverse ancestors from bottom to top
+        for ancestor in reversed(ancestors):
+            if ancestor in root_children:
+                return ancestor
+
+        return None
+
+    def find_lca(self, descriptor1: str, descriptor2: str) -> Optional[str]:
+        """
+        Find the lowest common ancestor (LCA) of two descriptors.
+
+        Args:
+            descriptor1: First descriptor
+            descriptor2: Second descriptor
+
+        Returns:
+            LCA descriptor or None if no common ancestor
+
+        Example:
+            >>> lca = graph.find_lca("chocolate", "caramel")
+            >>> print(lca)  # Might be 'sweet' or 'nutty/cocoa' depending on structure
+        """
+        if descriptor1 not in self.descriptions or descriptor2 not in self.descriptions:
+            return None
+
+        # Get ancestors of both (including the nodes themselves)
+        ancestors1 = set(self.get_ancestors(descriptor1) + [descriptor1])
+        ancestors2 = set(self.get_ancestors(descriptor2) + [descriptor2])
+
+        # Find common ancestors
+        common_ancestors = ancestors1 & ancestors2
+
+        if not common_ancestors:
+            return None
+
+        # Find the lowest (furthest from root)
+        # For each common ancestor, count its distance from root
+        lca = None
+        max_depth = -1
+
+        for ancestor in common_ancestors:
+            # Count depth (number of ancestors)
+            depth = len(self.get_ancestors(ancestor))
+            if depth > max_depth:
+                max_depth = depth
+                lca = ancestor
+
+        return lca
+
     def plot(self, *args: Any, **kwargs: Any) -> Any:
         """
         Plot the graph using igraph's plotting functionality.

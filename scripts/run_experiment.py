@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""
+Run Experiment
+
+Flexible script for running benchmark experiments with configurable parameters.
+
+Usage:
+    # Small test (recommended first)
+    python scripts/run_experiment.py --models tinyllama --conditions C0 C3 --max-questions 10
+
+    # Medium test
+    python scripts/run_experiment.py --models tinyllama mistral --conditions C0 C2 C3
+
+    # Full benchmark (all questions, multiple models)
+    python scripts/run_experiment.py --models tinyllama mistral --conditions C0 C1 C2 C3 --output results/full_benchmark
+
+    # With OpenRouter
+    python scripts/run_experiment.py --client openrouter --models anthropic/claude-sonnet-4.5 --conditions C0 C3
+"""
+
+import sys
+import argparse
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from FlavorGraphTraverser.evaluation import BatchRunner
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run benchmark experiment")
+
+    parser.add_argument(
+        "--questions",
+        default="data/questions/all_questions.json",
+        help="Path to questions JSON file"
+    )
+
+    parser.add_argument(
+        "--graph",
+        default="data/graphs/coffee_flavor_wheel.pkl",
+        help="Path to graph pickle file"
+    )
+
+    parser.add_argument(
+        "--output",
+        default="results/experiment",
+        help="Output directory for results"
+    )
+
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        required=True,
+        help="Model names (e.g., tinyllama mistral)"
+    )
+
+    parser.add_argument(
+        "--conditions",
+        nargs="+",
+        required=True,
+        choices=["C0", "C1", "C2", "C3"],
+        help="Conditions to test (C0=zero-shot, C1=CoT, C2=tools, C3=CoT+tools)"
+    )
+
+    parser.add_argument(
+        "--client",
+        choices=["ollama", "openrouter"],
+        default="ollama",
+        help="Client type"
+    )
+
+    parser.add_argument(
+        "--base-url",
+        help="Base URL for Ollama (default: http://localhost:11434)"
+    )
+
+    parser.add_argument(
+        "--api-key",
+        help="API key for OpenRouter (default: from environment)"
+    )
+
+    parser.add_argument(
+        "--max-questions",
+        type=int,
+        help="Maximum number of questions to evaluate (for testing)"
+    )
+
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable caching"
+    )
+
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce output verbosity"
+    )
+
+    args = parser.parse_args()
+
+    # Validate files exist
+    if not Path(args.questions).exists():
+        print(f"❌ Questions file not found: {args.questions}")
+        print()
+        print("Generate questions first:")
+        print("  python scripts/generate_all_questions.py")
+        return 1
+
+    if not Path(args.graph).exists():
+        print(f"❌ Graph file not found: {args.graph}")
+        return 1
+
+    # Load and optionally limit questions
+    if args.max_questions:
+        import json
+        with open(args.questions) as f:
+            data = json.load(f)
+
+        limited_questions = data["questions"][:args.max_questions]
+        data["questions"] = limited_questions
+        data["metadata"]["total_count"] = len(limited_questions)
+        data["metadata"]["limited"] = True
+        data["metadata"]["original_count"] = len(data["questions"])
+
+        # Save limited questions
+        limited_file = f"{args.output}/limited_questions.json"
+        Path(limited_file).parent.mkdir(parents=True, exist_ok=True)
+        with open(limited_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        questions_file = limited_file
+        print(f"Limited to {args.max_questions} questions")
+        print()
+    else:
+        questions_file = args.questions
+
+    # Print experiment configuration
+    print("="*70)
+    print("Experiment Configuration")
+    print("="*70)
+    print(f"Questions: {questions_file}")
+    print(f"Graph: {args.graph}")
+    print(f"Output: {args.output}")
+    print(f"Models: {', '.join(args.models)}")
+    print(f"Conditions: {', '.join(args.conditions)}")
+    print(f"Client: {args.client}")
+    if args.base_url:
+        print(f"Base URL: {args.base_url}")
+    print(f"Caching: {'disabled' if args.no_cache else 'enabled'}")
+    print("="*70)
+    print()
+
+    # Calculate expected evaluations
+    import json
+    with open(questions_file) as f:
+        data = json.load(f)
+        n_questions = len(data["questions"])
+
+    n_evaluations = n_questions * len(args.models) * len(args.conditions)
+    print(f"Expected evaluations: {n_evaluations}")
+    print(f"  ({n_questions} questions × {len(args.models)} models × {len(args.conditions)} conditions)")
+    print()
+
+    # Estimate time/cost
+    if args.client == "ollama":
+        est_time_per_eval = 0.5  # seconds
+        est_total_time = n_evaluations * est_time_per_eval
+        print(f"Estimated time: {est_total_time/60:.1f} minutes")
+        print(f"Estimated cost: $0 (local)")
+    else:
+        est_time_per_eval = 2  # seconds (API latency)
+        est_total_time = n_evaluations * est_time_per_eval
+        est_cost_per_eval = 0.01  # rough estimate
+        est_total_cost = n_evaluations * est_cost_per_eval
+        print(f"Estimated time: {est_total_time/60:.1f} minutes")
+        print(f"Estimated cost: ${est_total_cost:.2f} (API)")
+
+    print()
+    input("Press Enter to continue or Ctrl+C to cancel...")
+    print()
+
+    # Create batch runner
+    runner = BatchRunner(
+        questions_file=questions_file,
+        graph_file=args.graph,
+        output_dir=args.output,
+        enable_cache=not args.no_cache,
+        verbose=not args.quiet
+    )
+
+    # Run experiment
+    try:
+        results = runner.run(
+            models=args.models,
+            conditions=args.conditions,
+            client_type=args.client,
+            base_url=args.base_url,
+            api_key=args.api_key
+        )
+
+        print()
+        print("="*70)
+        print("✓ EXPERIMENT COMPLETE")
+        print("="*70)
+        print()
+        print(f"Results saved to: {args.output}/results.json")
+        print(f"Cache saved to: {args.output}/cache/")
+        print()
+
+        # Print summary
+        summary = results["summary"]
+        print(f"Total evaluations: {summary['total_evaluations']}")
+        print(f"Overall accuracy: {summary['overall_accuracy']:.1%}")
+        print(f"Elapsed time: {summary['elapsed_seconds']:.1f}s")
+        print()
+
+        print("Next steps:")
+        print("  1. Review results in results.json")
+        print("  2. Analyze with custom scripts or notebooks")
+        print("  3. Generate tables and figures for paper")
+        print()
+
+        return 0
+
+    except KeyboardInterrupt:
+        print()
+        print("="*70)
+        print("⚠️  INTERRUPTED")
+        print("="*70)
+        print()
+        print("Experiment interrupted by user.")
+        print("Partial results may be cached and will resume on next run.")
+        print()
+        return 130
+
+    except Exception as e:
+        print()
+        print("="*70)
+        print("❌ ERROR")
+        print("="*70)
+        print(f"\n{e}\n")
+
+        import traceback
+        traceback.print_exc()
+
+        print()
+        print("Troubleshooting:")
+        if args.client == "ollama":
+            print("  - Check Ollama is running: ollama serve")
+            print(f"  - Check model is installed: ollama pull {args.models[0]}")
+            print("  - Check base URL is correct")
+        else:
+            print("  - Check API key is set: export OPENROUTER_API_KEY=...")
+            print("  - Check model name is correct")
+            print("  - Check internet connection")
+        print()
+
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

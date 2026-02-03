@@ -1,0 +1,191 @@
+# Question Generation Templates
+# Defines templates for generating questions across all task types
+
+# Category A: Taxonomic Reasoning (180 questions)
+taxonomic:
+  A1_root_classification:
+    count: 75  # Target: 50, generate extra for selection
+    template: "Which of the following are root categories that '{descriptor}' belongs to? (Select all that apply)"
+    description: "Multi-label: Identify ALL valid root categories from 5-6 options. Can be 0, 1, or multiple correct."
+    answer_format: "multi_label"
+    sampling:
+      descriptor_type: "leaf"  # Sample from leaf nodes
+      distractor_count: 3
+      distractor_type: "other_roots"  # Other root categories
+    validation:
+      - "descriptor must be in graph"
+      - "correct answer must be valid root"
+      - "all distractors must be different roots"
+
+  A2_ancestor_verification:
+    count: 75  # Target: 50, generate extra for selection
+    templates:
+      - "Is '{ancestor}' an ancestor of '{descriptor}'?"
+      - "Does '{descriptor}' belong to the '{ancestor}' category?"
+      - "Is '{descriptor}' a type of '{ancestor}'?"
+    description: "Verify if one descriptor is an ancestor of another"
+    sampling:
+      descriptor_type: "leaf_or_middle"
+      ancestor_strategy: "mixed"  # 50% true ancestors, 50% false
+      true_ancestor_type: "any"  # Any level in hierarchy
+      false_ancestor_type: "plausible"  # From same domain but wrong branch
+    options:
+      type: "yes_no"
+      yes_label: "Yes"
+      no_label: "No"
+    validation:
+      - "both descriptor and ancestor must be in graph"
+      - "if true: ancestor must be actual ancestor"
+      - "if false: ancestor must not be ancestor"
+
+  A3_sibling_identification:
+    count: 42  # Target: 28, generate extra for selection
+    template: "Which of the following shares the same parent as '{descriptor}'?"
+    description: "Identify siblings (descriptors with same parent)"
+    sampling:
+      descriptor_type: "middle"  # Middle nodes have clear siblings
+      correct_option: "true_sibling"
+      distractor_types:
+        - "cousin"  # Same grandparent, different parent
+        - "uncle"  # Parent's sibling
+        - "unrelated"  # Different branch
+    validation:
+      - "descriptor must have siblings"
+      - "correct option must be actual sibling"
+      - "distractors must not be siblings"
+
+  A4_path_reconstruction:
+    count: 45  # Target: 30, generate extra for selection
+    template: "What is the path from the root to '{descriptor}'?"
+    description: "Reconstruct the hierarchical path"
+    sampling:
+      descriptor_type: "leaf"
+      path_length: "3+"  # At least 3 levels deep
+    options:
+      format: "path_sequence"  # e.g., "root → parent → child"
+      distractor_strategies:
+        - "wrong_root"  # Correct path but wrong starting root
+        - "wrong_middle"  # Correct root and leaf, wrong middle
+        - "wrong_order"  # Correct nodes, wrong order
+    validation:
+      - "descriptor must have depth >= 3"
+      - "correct path must be valid"
+      - "all distractors must be invalid paths"
+
+  A5_lca_finding:
+    count: 30  # Target: 20, generate extra for selection
+    template: "What is the lowest common ancestor of '{descriptor1}' and '{descriptor2}'?"
+    description: "Find the lowest common ancestor (LCA) of two descriptors"
+    sampling:
+      descriptor_type: "leaf_or_middle"
+      pair_strategy: "varied_distance"  # Mix close and distant pairs
+      lca_depth: "any"
+    options:
+      distractor_strategies:
+        - "too_high"  # Higher ancestor (e.g., root when middle is correct)
+        - "too_low"  # Lower node (not an ancestor of both)
+        - "ancestor_of_one"  # Ancestor of only one descriptor
+    validation:
+      - "both descriptors must be in graph"
+      - "LCA must be correct"
+      - "distractors must be invalid LCAs"
+
+# Category E: Similarity Reasoning (80 questions)
+similarity:
+  E1_similarity_ranking:
+    count: 45  # Target: 30, generate extra for selection
+    template: "Rank these flavors from most similar to '{target}' to least similar: [{candidates}]"
+    description: "Rank candidates by similarity to target"
+    sampling:
+      target_type: "leaf_or_middle"
+      candidate_count: 3
+      candidate_strategy: "distance_based"  # Mix close and far
+    options:
+      format: "ranking"  # e.g., "A > B > C"
+      all_permutations: false  # Only plausible rankings
+      distractor_count: 3
+    similarity_metric: "path_distance"  # Shorter path = more similar
+    validation:
+      - "target and all candidates must be in graph"
+      - "correct ranking must match path distances"
+      - "at least 2 distance levels (not all equal)"
+
+  E2_pairwise_comparison:
+    count: 45  # Target: 30, generate extra for selection
+    templates:
+      - "Which is more similar to '{target}': '{option1}' or '{option2}'?"
+      - "Is '{target}' more similar to '{option1}' or '{option2}'?"
+    description: "Compare similarity of two options to a target"
+    sampling:
+      target_type: "leaf_or_middle"
+      option_strategy: "clear_difference"  # One much closer than other
+      min_distance_diff: 1  # At least 1 level difference
+    options:
+      type: "binary_choice"
+    similarity_metric: "path_distance"
+    validation:
+      - "all descriptors must be in graph"
+      - "distance difference must be >= min_distance_diff"
+
+  E3_odd_one_out:
+    count: 23  # Target: 15, generate extra for selection
+    template: "Which of these is the odd one out: [{candidates}]"
+    description: "Identify the descriptor that doesn't belong"
+    sampling:
+      candidate_count: 4
+      strategy: "three_similar_one_different"
+      similar_group: "same_parent"  # 3 share a parent
+      odd_one: "different_parent"  # 1 from different branch
+    validation:
+      - "all candidates must be in graph"
+      - "3 candidates must share property (e.g., same parent)"
+      - "1 candidate must not share that property"
+
+# Category F: Open-ended Reasoning (10-15 questions)
+open_ended:
+  F_flavor_description:
+    count: 18  # Target: 12, generate extra for selection
+    templates:
+      - "Describe the flavor profile of '{descriptor}' in the context of coffee tasting."
+      - "How would you characterize '{descriptor}' flavors in coffee?"
+      - "Explain the relationship between '{descriptor1}' and '{descriptor2}' in coffee flavor profiles."
+    description: "Open-ended questions requiring explanation and reasoning"
+    sampling:
+      descriptor_type: "any"
+      question_types:
+        - "single_descriptor"  # 6 questions
+        - "descriptor_pair"  # 4 questions
+        - "category_overview"  # 2 questions
+    evaluation:
+      method: "llm_judge"
+      judge_model: "anthropic/claude-opus-4.5"
+      rubric:
+        - "Accuracy (0-2): Factually correct based on graph"
+        - "Completeness (0-2): Covers relevant aspects"
+        - "Clarity (0-1): Well-explained and understandable"
+      max_score: 5
+    validation:
+      - "descriptor(s) must be in graph"
+      - "reference answer must be provided for judge"
+
+# Global Settings
+settings:
+  # Diversity constraints
+  diversity:
+    max_descriptor_reuse: 3  # Each descriptor appears in at most 3 questions
+    min_root_coverage: 0.8  # Cover at least 80% of root categories
+
+  # Quality constraints
+  quality:
+    min_distractor_distance: 1  # Distractors should be at least 1 level away
+    avoid_trivial: true  # Skip questions that are too easy
+    avoid_ambiguous: true  # Skip questions with multiple valid answers
+
+  # Output format
+  output:
+    include_metadata: true  # Include _template, _objects fields
+    include_debug: true  # Include _debug field with generation details
+    validate_answerable: true  # Verify each question is answerable
+
+  # Random seed (for reproducibility)
+  random_seed: 42

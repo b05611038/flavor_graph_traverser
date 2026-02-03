@@ -1,0 +1,97 @@
+# Model Configuration
+# Defines all models to be tested in the benchmark
+
+# Closed-source models (4 models)
+closed_source:
+  - id: anthropic/claude-sonnet-4.5
+    name: Claude Sonnet 4.5
+    provider: Anthropic
+    pricing:
+      input: 3.0   # per 1M tokens
+      output: 15.0  # per 1M tokens
+    enabled: true
+
+  - id: openai/gpt-5.2
+    name: GPT-5.2
+    provider: OpenAI
+    pricing:
+      input: 1.75
+      output: 14.0
+    enabled: true
+
+  - id: google/gemini-3-flash-preview
+    name: Gemini 3 Flash
+    provider: Google
+    pricing:
+      input: 0.50
+      output: 3.0
+    enabled: true
+
+  - id: xai/grok-4-1-fast
+    name: Grok 4.1 Fast
+    provider: xAI
+    pricing:
+      input: 0.20
+      output: 0.50
+    enabled: true
+
+# Open-source models (7 models)
+open_source:
+  - id: openai/gpt-oss-120b
+    name: GPT-OSS 120B
+    provider: OpenAI
+    enabled: true
+
+  - id: qwen/qwen3-235b-a22b-instruct
+    name: Qwen3-235B-A22B
+    provider: Alibaba
+    region: China
+    enabled: true
+
+  - id: moonshotai/kimi-k2
+    name: Kimi K2
+    provider: Moonshot
+    region: China
+    enabled: true
+
+  - id: meta-llama/llama-4-maverick
+    name: Llama 4 Maverick
+    provider: Meta
+    notes: Uses pythonic parser for function calls (medium reliability)
+    enabled: true
+
+  - id: deepseek/deepseek-chat
+    name: DeepSeek Chat
+    provider: DeepSeek
+    region: China
+    enabled: true
+
+  - id: mistralai/mistral-medium-3
+    name: Mistral Medium 3
+    provider: Mistral
+    region: EU
+    enabled: true
+
+  - id: nvidia/llama-3.3-nemotron-super-49b-v1
+    name: Nemotron Super 49B
+    provider: NVIDIA
+    notes: May have tool calling issues
+    enabled: true
+
+# Local testing model (Ollama)
+local:
+  - id: tinyllama
+    name: TinyLlama
+    provider: Ollama
+    host: http://localhost:11434
+    enabled: true
+    notes: For debugging only, not for benchmark
+
+# Judge model for F-category questions
+judge:
+  id: anthropic/claude-opus-4.5
+  name: Claude Opus 4.5
+  provider: Anthropic
+  pricing:
+    input: 15.0
+    output: 75.0

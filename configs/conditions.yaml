@@ -1,0 +1,58 @@
+# Experimental Conditions Configuration
+# Defines the 4 conditions (C0-C3) for the benchmark
+
+conditions:
+  C0:
+    name: "Zero-shot Baseline"
+    description: "Direct prompting without tools or chain-of-thought"
+    tools_enabled: false
+    cot_enabled: false
+    max_reasoning_calls: 0
+    system_prompt: |
+      You are an expert in coffee flavor analysis. Answer the question directly.
+
+  C1:
+    name: "CoT with Structural Hint"
+    description: "Chain-of-thought with hierarchical structure hint, no tools"
+    tools_enabled: false
+    cot_enabled: true
+    max_reasoning_calls: 0
+    system_prompt: |
+      You are an expert in coffee flavor analysis.
+
+      Flavor descriptors are organized in a hierarchical graph structure
+      (e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
+
+  C2:
+    name: "Tools Only"
+    description: "Tool-augmented without chain-of-thought"
+    tools_enabled: true
+    cot_enabled: false
+    max_reasoning_calls: 3
+    system_prompt: |
+      You are an expert in coffee flavor analysis with access to a coffee flavor graph database.
+
+      Use the provided tools to query the flavor hierarchy and answer the question.
+
+  C3:
+    name: "CoT + Tools"
+    description: "Full tool-augmented with chain-of-thought"
+    tools_enabled: true
+    cot_enabled: true
+    max_reasoning_calls: 3
+    system_prompt: |
+      You are an expert in coffee flavor analysis with access to a coffee flavor graph database.
+
+      Flavor descriptors are organized in a hierarchical graph structure
+      (e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
+
+      Use the provided tools to query the flavor hierarchy and answer the question.
+
+# Common settings across all conditions
+common:
+  temperature: 0  # For determinism
+  max_output_tokens: 1024
+  timeout_seconds: 60
+  answer_format: |
+    When providing your final answer, use this exact format:
+    "Therefore, I select (X)" where X is A, B, C, or D.

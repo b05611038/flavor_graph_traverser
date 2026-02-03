@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Audited Questions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            opacity: 0.9;
+            font-size: 12px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e5e7eb;
+            background: #f9fafb;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            font-weight: 600;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background: #f3f4f6;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .filters {
+            padding: 20px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .filter-group select, .filter-group input {
+            padding: 6px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 20px;
+            max-height: calc(100vh - 350px);
+            overflow-y: auto;
+        }
+
+        .question-list {
+            display: none;
+        }
+
+        .question-list.active {
+            display: block;
+        }
+
+        .question-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.2s;
+        }
+
+        .question-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .question-meta {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .badge-task {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-category {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .question-body {
+            margin-bottom: 15px;
+        }
+
+        .question-text {
+            font-size: 15px;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+        }
+
+        .options {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .option {
+            padding: 4px 0;
+            font-size: 14px;
+        }
+
+        .option.correct {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .flag-info {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .flag-info strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #991b1b;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-unconfirm {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-unflag {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-confirm {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-refresh {
+            background: #667eea;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: auto;
+        }
+
+        .btn-refresh:hover {
+            background: #5568d3;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 Review Audited Questions</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-value" id="confirmed-count">0</span>
+                    <span class="stat-label">Confirmed</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="flagged-count">0</span>
+                    <span class="stat-label">Flagged</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="pending-count">0</span>
+                    <span class="stat-label">Pending</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('confirmed')">
+                Confirmed Questions
+            </button>
+            <button class="tab" onclick="switchTab('flagged')">
+                Flagged Questions
+            </button>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Task:</label>
+                <select id="filter-task" onchange="applyFilters()">
+                    <option value="">All</option>
+                    <option value="A1_root_classification">A1</option>
+                    <option value="A2_ancestor_verification">A2</option>
+                    <option value="A3_sibling_identification">A3</option>
+                    <option value="A4_path_reconstruction">A4</option>
+                    <option value="A5_lca_finding">A5</option>
+                    <option value="E1_similarity_ranking">E1</option>
+                    <option value="E2_pairwise_comparison">E2</option>
+                    <option value="E3_odd_one_out">E3</option>
+                    <option value="F_flavor_description">F</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Search:</label>
+                <input type="text" id="search-input" placeholder="Search descriptor..." onkeyup="applyFilters()">
+            </div>
+            <button class="btn-refresh" onclick="refreshAll()">
+                🔄 Refresh
+            </button>
+        </div>
+
+        <div class="content">
+            <div class="question-list active" id="confirmed-list">
+                <div class="loading">Loading confirmed questions...</div>
+            </div>
+
+            <div class="question-list" id="flagged-list">
+                <div class="loading">Loading flagged questions...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let confirmedQuestions = [];
+        let flaggedQuestions = [];
+        let currentTab = 'confirmed';
+
+        async function loadStats() {
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+
+            document.getElementById('confirmed-count').textContent = stats.confirmed;
+            document.getElementById('flagged-count').textContent = stats.flagged;
+            document.getElementById('pending-count').textContent = stats.pending;
+        }
+
+        async function loadConfirmed() {
+            const response = await fetch('/api/confirmed');
+            const data = await response.json();
+            confirmedQuestions = data.questions;
+            renderConfirmed();
+        }
+
+        async function loadFlagged() {
+            const response = await fetch('/api/flagged');
+            const data = await response.json();
+            flaggedQuestions = data.questions;
+            renderFlagged();
+        }
+
+        function renderConfirmed() {
+            const container = document.getElementById('confirmed-list');
+
+            if (confirmedQuestions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No confirmed questions yet</h3>
+                        <p>Start auditing to confirm questions</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            confirmedQuestions.forEach(q => {
+                html += renderQuestionCard(q, 'confirmed');
+            });
+            container.innerHTML = html;
+        }
+
+        function renderFlagged() {
+            const container = document.getElementById('flagged-list');
+
+            if (flaggedQuestions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No flagged questions</h3>
+                        <p>Questions flagged for review will appear here</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            flaggedQuestions.forEach(q => {
+                html += renderQuestionCard(q, 'flagged');
+            });
+            container.innerHTML = html;
+        }
+
+        function renderQuestionCard(q, type) {
+            let flagInfo = '';
+            if (type === 'flagged' && q.flag_reason) {
+                flagInfo = `
+                    <div class="flag-info">
+                        <strong>Flag Reason: ${escapeHtml(q.flag_reason)}</strong>
+                        ${q.notes ? escapeHtml(q.notes) : ''}
+                    </div>
+                `;
+            }
+
+            let optionsHtml = '';
+            for (let [key, value] of Object.entries(q.options || {})) {
+                const isCorrect = q.correct_answer && (
+                    (Array.isArray(q.correct_answer) && q.correct_answer.includes(key)) ||
+                    q.correct_answer === key
+                );
+                const correctClass = isCorrect ? 'correct' : '';
+                const marker = isCorrect ? '✓' : ' ';
+                optionsHtml += `<div class="option ${correctClass}">[${marker}] (${key}) ${escapeHtml(value)}</div>`;
+            }
+
+            let actions = '';
+            if (type === 'confirmed') {
+                actions = `
+                    <button class="btn btn-small btn-unconfirm" onclick="unconfirm('${q.id}')">
+                        Unconfirm
+                    </button>
+                `;
+            } else if (type === 'flagged') {
+                actions = `
+                    <button class="btn btn-small btn-confirm" onclick="confirmFlagged('${q.id}')">
+                        Confirm
+                    </button>
+                    <button class="btn btn-small btn-unflag" onclick="unflag('${q.id}')">
+                        Unflag
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="question-card" data-task="${q.task_type}" data-descriptor="${q.descriptor}">
+                    <div class="question-header">
+                        <div class="question-meta">
+                            <strong>${q.id}</strong>
+                            <span class="badge badge-task">${q.task_type}</span>
+                            <span class="badge badge-category">${q.category}</span>
+                            ${q.descriptor ? `<span class="badge badge-category">${q.descriptor}</span>` : ''}
+                        </div>
+                    </div>
+
+                    ${flagInfo}
+
+                    <div class="question-body">
+                        <div class="question-text">${escapeHtml(q.llm_view)}</div>
+                    </div>
+
+                    <div class="actions">
+                        ${actions}
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.question-list').forEach(list => list.classList.remove('active'));
+            document.getElementById(`${tab}-list`).classList.add('active');
+
+            // Load data if needed
+            if (tab === 'confirmed' && confirmedQuestions.length === 0) {
+                loadConfirmed();
+            } else if (tab === 'flagged' && flaggedQuestions.length === 0) {
+                loadFlagged();
+            }
+        }
+
+        function applyFilters() {
+            const taskFilter = document.getElementById('filter-task').value;
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+
+            document.querySelectorAll('.question-card').forEach(card => {
+                const task = card.dataset.task;
+                const descriptor = card.dataset.descriptor.toLowerCase();
+
+                const matchesTask = !taskFilter || task === taskFilter;
+                const matchesSearch = !searchTerm || descriptor.includes(searchTerm);
+
+                card.style.display = (matchesTask && matchesSearch) ? 'block' : 'none';
+            });
+        }
+
+        async function unconfirm(questionId) {
+            if (!confirm('Move this question back to pending?')) return;
+
+            await fetch('/api/unconfirm', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question_id: questionId})
+            });
+
+            await loadStats();
+            await loadConfirmed();
+        }
+
+        async function unflag(questionId) {
+            if (!confirm('Move this question back to pending?')) return;
+
+            await fetch('/api/unflag', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question_id: questionId})
+            });
+
+            await loadStats();
+            await loadFlagged();
+        }
+
+        async function confirmFlagged(questionId) {
+            if (!confirm('Move this question to confirmed?')) return;
+
+            await fetch('/api/confirm_flagged', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question_id: questionId})
+            });
+
+            await loadStats();
+            await loadFlagged();
+            await loadConfirmed();
+        }
+
+        async function refreshAll() {
+            console.log('Refreshing all data...');
+            await loadStats();
+            await loadConfirmed();
+            await loadFlagged();
+            console.log('Refresh complete');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial load
+        loadStats();
+        loadConfirmed();
+
+        // Auto-refresh every 10 seconds
+        setInterval(async () => {
+            await loadStats();
+            // Reload current tab
+            if (currentTab === 'confirmed') {
+                await loadConfirmed();
+            } else if (currentTab === 'flagged') {
+                await loadFlagged();
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

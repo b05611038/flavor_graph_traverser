@@ -1,0 +1,1254 @@
+"""
+Question Generator
+
+Generates benchmark questions from coffee flavor graph using templates.
+
+Architecture:
+    QuestionGenerator (orchestrator)
+    ├── DescriptorSampler (sample nodes from graph)
+    ├── DistractorGenerator (generate wrong answers)
+    └── QuestionValidator (validate question quality)
+
+Example:
+    >>> from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
+    >>> from FlavorGraphTraverser.generation import QuestionGenerator
+    >>>
+    >>> data = load_graph_data("data/graphs/coffee_flavor_wheel.pkl")
+    >>> graph = CoffeeDescriptionGraph(data['descriptions'], data['connections'], root=data['root'])
+    >>>
+    >>> generator = QuestionGenerator(graph)
+    >>> questions = generator.generate_all()  # Generate ~275 questions
+    >>> generator.save_questions(questions, "data/questions/generated.json")
+"""
+
+import random
+import yaml
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass, asdict
+from collections import defaultdict
+
+from ..graph import CoffeeDescriptionGraph
+from .samplers import DescriptorSampler, DistractorGenerator
+from .validators import QuestionValidator
+
+
+@dataclass
+class QuestionTemplate:
+    """
+    Template for generating questions.
+
+    Attributes:
+        task_type: Type of task (e.g., "A1_root_classification")
+        template: Question text template with placeholders
+        count: Number of questions to generate
+        sampling: Sampling strategy configuration
+        validation: Validation rules
+        options: Option generation configuration
+    """
+    task_type: str
+    template: str
+    count: int
+    sampling: Dict[str, Any]
+    validation: List[str]
+    options: Optional[Dict[str, Any]] = None
+    description: str = ""
+
+
+class QuestionGenerator:
+    """
+    Generates benchmark questions from coffee flavor graph.
+
+    Uses template-based generation with sampling strategies to create
+    diverse, high-quality questions across multiple task types.
+
+    Attributes:
+        graph: CoffeeDescriptionGraph instance
+        templates: Loaded question templates
+        sampler: DescriptorSampler for sampling nodes
+        distractor_gen: DistractorGenerator for wrong answers
+        validator: QuestionValidator for quality checks
+        random_seed: Random seed for reproducibility
+
+    Example:
+        >>> generator = QuestionGenerator(graph)
+        >>>
+        >>> # Generate all questions
+        >>> questions = generator.generate_all()
+        >>> print(f"Generated {len(questions)} questions")
+        >>>
+        >>> # Generate specific category
+        >>> a1_questions = generator.generate_category("A1_root_classification")
+        >>>
+        >>> # Save to file
+        >>> generator.save_questions(questions, "output.json")
+    """
+
+    def __init__(
+        self,
+        graph: CoffeeDescriptionGraph,
+        templates_path: Optional[str] = None,
+        random_seed: Optional[int] = None,
+        exclude_descriptors: Optional[set] = None
+    ):
+        """
+        Initialize question generator.
+
+        Args:
+            graph: CoffeeDescriptionGraph instance
+            templates_path: Path to templates YAML (default: configs/question_templates.yaml)
+            random_seed: Random seed for reproducibility (default: from config or 42)
+            exclude_descriptors: Set of descriptors to exclude from questions (e.g., to prevent data leakage)
+        """
+        self.graph = graph
+        self.exclude_descriptors = exclude_descriptors or set()
+
+        # Load templates
+        if templates_path is None:
+            project_root = Path(__file__).parent.parent.parent
+            templates_path = project_root / "configs" / "question_templates.yaml"
+
+        with open(templates_path, 'r') as f:
+            self.config = yaml.safe_load(f)
+
+        # Set random seed
+        self.random_seed = random_seed or self.config.get("settings", {}).get("random_seed", 42)
+        random.seed(self.random_seed)
+
+        # Initialize components with exclusion list
+        self.sampler = DescriptorSampler(
+            graph,
+            random_seed=self.random_seed,
+            global_exclude=self.exclude_descriptors
+        )
+        self.distractor_gen = DistractorGenerator(graph, random_seed=self.random_seed)
+        self.validator = QuestionValidator(graph)
+
+        # Track descriptor usage for diversity
+        self.descriptor_usage = defaultdict(int)
+        self.max_reuse = self.config.get("settings", {}).get("diversity", {}).get("max_descriptor_reuse", 3)
+
+    def generate_all(self) -> List[Dict[str, Any]]:
+        """
+        Generate all questions across all categories.
+
+        Returns:
+            List of question dicts
+
+        Example:
+            >>> questions = generator.generate_all()
+            >>> print(f"Total: {len(questions)}")
+            >>> print(f"Categories: {set(q['category'] for q in questions)}")
+        """
+        all_questions = []
+
+        # Category A: Taxonomic
+        for task_type, template_config in self.config.get("taxonomic", {}).items():
+            questions = self.generate_category(task_type, template_config)
+            all_questions.extend(questions)
+
+        # Category E: Similarity
+        for task_type, template_config in self.config.get("similarity", {}).items():
+            questions = self.generate_category(task_type, template_config)
+            all_questions.extend(questions)
+
+        # Category F: Open-ended
+        for task_type, template_config in self.config.get("open_ended", {}).items():
+            questions = self.generate_category(task_type, template_config)
+            all_questions.extend(questions)
+
+        return all_questions
+
+    def generate_category(
+        self,
+        task_type: str,
+        template_config: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate questions for a specific category.
+
+        Args:
+            task_type: Task type (e.g., "A1_root_classification")
+            template_config: Template configuration (default: load from config)
+
+        Returns:
+            List of question dicts
+
+        Example:
+            >>> questions = generator.generate_category("A1_root_classification")
+            >>> print(f"Generated {len(questions)} A1 questions")
+        """
+        # Get template config
+        if template_config is None:
+            template_config = self._find_template_config(task_type)
+
+        if template_config is None:
+            raise ValueError(f"Template not found for task type: {task_type}")
+
+        # Determine which generation method to use
+        category_prefix = task_type.split("_")[0]
+
+        if category_prefix == "A1":
+            return self._generate_a1(task_type, template_config)
+        elif category_prefix == "A2":
+            return self._generate_a2(task_type, template_config)
+        elif category_prefix == "A3":
+            return self._generate_a3(task_type, template_config)
+        elif category_prefix == "A4":
+            return self._generate_a4(task_type, template_config)
+        elif category_prefix == "A5":
+            return self._generate_a5(task_type, template_config)
+        elif category_prefix == "E1":
+            return self._generate_e1(task_type, template_config)
+        elif category_prefix == "E2":
+            return self._generate_e2(task_type, template_config)
+        elif category_prefix == "E3":
+            return self._generate_e3(task_type, template_config)
+        elif category_prefix == "F":
+            return self._generate_f(task_type, template_config)
+        else:
+            raise ValueError(f"Unknown task type prefix: {category_prefix}")
+
+    def _find_template_config(self, task_type: str) -> Optional[Dict[str, Any]]:
+        """Find template config for task type."""
+        for category in ["taxonomic", "similarity", "open_ended"]:
+            if task_type in self.config.get(category, {}):
+                return self.config[category][task_type]
+        return None
+
+    def _get_all_root_categories(self, descriptor: str) -> list:
+        """
+        Get ALL root categories that a descriptor belongs to (DAG-aware).
+
+        In a DAG, a node can have multiple parents leading to different roots.
+
+        Args:
+            descriptor: The descriptor to check
+
+        Returns:
+            List of all valid root categories
+        """
+        # Get all direct parents using graph's built-in method
+        all_parents = self.graph.parents_of_description(descriptor)
+
+        # Get root category for each parent
+        root_categories = set()
+        for parent in all_parents:
+            try:
+                root = self.graph.get_root_category(parent)
+                if root:
+                    root_categories.add(root)
+            except:
+                pass
+
+        return sorted(list(root_categories))
+
+    def _generate_a1(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate A1 (root classification) questions with multi-label format.
+
+        Template: "Which of the following are root categories that '{descriptor}' belongs to? (Select all that apply)"
+
+        Strategy:
+            1. Sample leaf descriptor
+            2. Get ALL its root categories (DAG-aware) - these are valid
+            3. Sample 3-4 invalid roots as distractors
+            4. Present 5-6 options total (mix valid + invalid)
+            5. Correct answer = ALL valid roots in the options
+            6. Format supports 0, 1, or multiple correct answers
+        """
+        questions = []
+        count = config["count"]
+        template = "Which of the following are root categories that '{descriptor}' belongs to? (Select all that apply)"
+
+        # Get all roots for sampling, exclude non-flavor roots
+        all_roots = self.graph.get_root_categories()
+
+        # Filter out non-flavor root categories
+        non_flavor_roots = {'taste', 'defected', 'baked', 'ROOT:SYSTEM'}
+        all_roots = [r for r in all_roots if r not in non_flavor_roots]
+
+        for i in range(count):
+            # Sample leaf descriptor
+            descriptor = self.sampler.sample_leaf(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor is None:
+                continue  # Skip if no valid descriptor
+
+            # Get ALL valid root categories (DAG-aware)
+            valid_roots = self._get_all_root_categories(descriptor)
+
+            if not valid_roots:
+                continue  # Skip if no valid roots found
+
+            # Get invalid roots
+            invalid_roots = [r for r in all_roots if r not in valid_roots]
+
+            # Decide how many options to present (5 or 6)
+            num_options = random.choice([5, 6])
+
+            # Decide mix: include some valid, some invalid
+            # Ensure at least 1 valid and at least 2 invalid for complexity
+            num_valid_in_options = min(len(valid_roots), num_options - 2)  # Leave room for distractors
+            num_invalid_in_options = num_options - num_valid_in_options
+
+            if len(invalid_roots) < num_invalid_in_options:
+                continue  # Skip if not enough invalid roots
+
+            # Sample which valid roots to include
+            if num_valid_in_options < len(valid_roots):
+                valid_in_options = random.sample(valid_roots, num_valid_in_options)
+            else:
+                valid_in_options = valid_roots.copy()
+
+            # Sample invalid roots
+            invalid_in_options = random.sample(invalid_roots, num_invalid_in_options)
+
+            # Combine all options and shuffle
+            all_options = valid_in_options + invalid_in_options
+            random.shuffle(all_options)
+
+            # Create options dict with letters A-F
+            letters = ['A', 'B', 'C', 'D', 'E', 'F'][:num_options]
+            options = {letter: option for letter, option in zip(letters, all_options)}
+
+            # Find which letters are correct (valid roots)
+            correct_letters = [letter for letter, root in options.items() if root in valid_in_options]
+
+            # Format answer as list (can be empty, single, or multiple)
+            correct_answer = sorted(correct_letters)  # Sort for consistency
+
+            # Format question text with conditional footnote for 'other' (check for 'defected' which will be mapped to 'other')
+            question_text = template.format(descriptor=descriptor)
+            if 'defected' in options.values():
+                question_text += "\n\n*'other' includes non-standard or less common flavor categories"
+
+            # Create question with multi-label format
+            question = {
+                "id": f"{task_type}_{i+1:03d}",
+                "category": "A",
+                "task_type": task_type,
+                "text": question_text,
+                "options": options,
+                "correct_answer": correct_answer,  # List of correct letters
+                "answer_format": "multi_label",  # Indicates multiple selections allowed
+                "_template": template,
+                "_objects": {
+                    "descriptor": descriptor,
+                    "all_valid_roots": valid_roots,  # ALL valid roots in entire graph
+                    "valid_roots_in_options": valid_in_options,  # Valid roots shown in this question
+                    "invalid_roots_in_options": invalid_in_options,  # Invalid roots shown
+                },
+                "_evaluation_note": "Multi-label: Model must select ALL and ONLY the valid roots in options. Can be 0, 1, or multiple correct answers."
+            }
+
+            # Validate
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[descriptor] += 1
+
+        return questions
+
+    def _generate_a2(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate A2 (ancestor verification) questions.
+
+        Template: "Is '{ancestor}' an ancestor of '{descriptor}'?"
+
+        Strategy:
+            1. Sample descriptor
+            2. 50% true: sample actual ancestor
+            3. 50% false: sample plausible non-ancestor
+            4. Create Yes/No options
+        """
+        questions = []
+        count = config["count"]
+        # Handle both "template" and "templates"
+        if "templates" in config:
+            templates = config["templates"]
+        elif "template" in config:
+            templates = [config["template"]]
+        else:
+            raise ValueError("Config must have 'template' or 'templates' field")
+
+        true_count = count // 2
+        false_count = count - true_count
+
+        # Generate TRUE questions
+        for i in range(true_count):
+            descriptor = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor is None:
+                continue
+
+            # Sample actual ancestor
+            ancestors = self.graph.get_ancestors(descriptor)
+            if not ancestors:
+                continue
+
+            ancestor = random.choice(ancestors)
+            template = random.choice(templates)
+
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "A",
+                "task_type": task_type,
+                "text": template.format(descriptor=descriptor, ancestor=ancestor),
+                "options": {"A": "Yes", "B": "No"},
+                "correct_answer": "A",
+                "_template": template,
+                "_objects": {
+                    "descriptor": descriptor,
+                    "ancestor": ancestor,
+                    "is_ancestor": True
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[descriptor] += 1
+
+        # Generate FALSE questions
+        for i in range(false_count):
+            descriptor = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor is None:
+                continue
+
+            # Sample plausible non-ancestor
+            non_ancestor = self.distractor_gen.sample_plausible_non_ancestor(descriptor)
+
+            if non_ancestor is None:
+                continue
+
+            template = random.choice(templates)
+
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "A",
+                "task_type": task_type,
+                "text": template.format(descriptor=descriptor, ancestor=non_ancestor),
+                "options": {"A": "Yes", "B": "No"},
+                "correct_answer": "B",
+                "_template": template,
+                "_objects": {
+                    "descriptor": descriptor,
+                    "ancestor": non_ancestor,
+                    "is_ancestor": False
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[descriptor] += 1
+
+        return questions
+
+    def _generate_a3(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate A3 (sibling identification) questions.
+
+        Template: "Which of the following shares the same parent as '{descriptor}'?"
+
+        Strategy:
+            1. Sample middle descriptor (has siblings)
+            2. Get its siblings (same parent)
+            3. Sample one sibling as correct answer
+            4. Generate distractors: cousins, uncles, unrelated
+        """
+        questions = []
+        count = config["count"]
+        template = config["template"]
+
+        # Try more attempts to reach target count
+        max_attempts = count * 10
+        attempts = 0
+
+        while len(questions) < count and attempts < max_attempts:
+            attempts += 1
+
+            # Sample middle descriptor
+            descriptor = self.sampler.sample_middle(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor is None:
+                continue
+
+            # Get siblings
+            parent = self.graph.get_parent(descriptor)
+            if parent is None:
+                continue
+
+            siblings = [s for s in self.graph.get_children(parent) if s != descriptor]
+            if not siblings:
+                continue  # No siblings
+
+            # Pick one sibling as correct answer
+            correct_sibling = random.choice(siblings)
+
+            # Generate distractors
+            distractors = self.distractor_gen.sample_non_siblings(
+                descriptor=descriptor,
+                parent=parent,
+                count=3
+            )
+
+            if len(distractors) < 3:
+                continue  # Not enough distractors
+
+            # Create options
+            options, correct_letter = self._create_multiple_choice_options(
+                correct_answer=correct_sibling,
+                distractors=distractors
+            )
+
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "A",
+                "task_type": task_type,
+                "text": template.format(descriptor=descriptor),
+                "options": options,
+                "correct_answer": correct_letter,
+                "_template": template,
+                "_objects": {
+                    "descriptor": descriptor,
+                    "parent": parent,
+                    "correct_sibling": correct_sibling,
+                    **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[descriptor] += 1
+
+        return questions
+
+    def _generate_a4(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate A4 (path reconstruction) questions.
+
+        Template: "What is the path from the root to '{descriptor}'?"
+
+        Strategy:
+            1. Sample leaf descriptor (at least depth 3)
+            2. Get correct path: root → ... → descriptor
+            3. Generate distractors: wrong root, wrong middle, wrong order
+        """
+        questions = []
+        count = config["count"]
+        template = config["template"]
+
+        for i in range(count):
+            # Sample leaf descriptor
+            descriptor = self.sampler.sample_leaf(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor is None:
+                continue
+
+            # Get path from root
+            ancestors = self.graph.get_ancestors(descriptor)
+            if len(ancestors) < 2:  # Need at least depth 3 (root + 1 middle + descriptor)
+                continue
+
+            # Build correct path (root → ... → descriptor)
+            correct_path = " → ".join(list(reversed(ancestors)) + [descriptor])
+
+            # Generate distractor paths
+            distractors = self.distractor_gen.generate_wrong_paths(
+                descriptor=descriptor,
+                correct_path_list=list(reversed(ancestors)) + [descriptor],
+                count=3
+            )
+
+            if len(distractors) < 3:
+                continue
+
+            # Create options
+            options, correct_letter = self._create_multiple_choice_options(
+                correct_answer=correct_path,
+                distractors=distractors
+            )
+
+            question = {
+                "id": f"{task_type}_{i+1:03d}",
+                "category": "A",
+                "task_type": task_type,
+                "text": template.format(descriptor=descriptor),
+                "options": options,
+                "correct_answer": correct_letter,
+                "_template": template,
+                "_objects": {
+                    "descriptor": descriptor,
+                    "correct_path": correct_path,
+                    **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[descriptor] += 1
+
+        return questions
+
+    def _generate_a5(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate A5 (LCA finding) questions.
+
+        Template: "What is the lowest common ancestor of '{descriptor1}' and '{descriptor2}'?"
+
+        Strategy:
+            1. Sample two descriptors
+            2. Find their lowest common ancestor (LCA)
+            3. Generate distractors: too high (e.g., root), too low, ancestor of only one
+        """
+        questions = []
+        count = config["count"]
+        template = config["template"]
+
+        for i in range(count):
+            # Sample first descriptor
+            descriptor1 = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor1 is None:
+                continue
+
+            # Sample second descriptor (different from first)
+            descriptor2 = self.sampler.sample_any(
+                exclude={descriptor1},
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor2 is None:
+                continue
+
+            # Find LCA
+            lca = self.graph.find_lca(descriptor1, descriptor2)
+            if lca is None:
+                continue
+
+            # Generate distractors
+            distractors = self.distractor_gen.generate_lca_distractors(
+                descriptor1=descriptor1,
+                descriptor2=descriptor2,
+                correct_lca=lca,
+                count=3
+            )
+
+            if len(distractors) < 3:
+                continue
+
+            # Create options
+            options, correct_letter = self._create_multiple_choice_options(
+                correct_answer=lca,
+                distractors=distractors
+            )
+
+            question = {
+                "id": f"{task_type}_{i+1:03d}",
+                "category": "A",
+                "task_type": task_type,
+                "text": template.format(descriptor1=descriptor1, descriptor2=descriptor2),
+                "options": options,
+                "correct_answer": correct_letter,
+                "_template": template,
+                "_objects": {
+                    "descriptor1": descriptor1,
+                    "descriptor2": descriptor2,
+                    "lca": lca,
+                    **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[descriptor1] += 1
+                self.descriptor_usage[descriptor2] += 1
+
+        return questions
+
+    def _generate_e1(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate E1 (similarity ranking) questions.
+
+        Template: "Rank these flavors from most similar to '{target}' to least similar: [{candidates}]"
+
+        Strategy:
+            1. Sample target descriptor
+            2. Sample 3 candidates at different distances
+            3. Correct answer is ranking by distance (shorter = more similar)
+            4. Generate distractor rankings
+        """
+        questions = []
+        count = config["count"]
+        template = config["template"]
+        candidate_count = config.get("candidate_count", 3)
+
+        for i in range(count):
+            # Sample target
+            target = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if target is None:
+                continue
+
+            # Sample candidates at different distances
+            candidates_with_distances = self.sampler.sample_by_distance(
+                target=target,
+                count=candidate_count,
+                require_different_distances=True
+            )
+
+            if len(candidates_with_distances) < candidate_count:
+                continue
+
+            # Sort by distance (ascending = most similar first)
+            candidates_sorted = [c for c, d in sorted(candidates_with_distances, key=lambda x: x[1])]
+
+            # Build correct ranking string
+            correct_ranking = " > ".join(candidates_sorted)
+
+            # Build candidate list string for question
+            candidates_str = ", ".join(candidates_sorted)
+
+            # Generate distractor rankings
+            distractors = self.distractor_gen.generate_wrong_rankings(
+                candidates=candidates_sorted,
+                count=3
+            )
+
+            if len(distractors) < 3:
+                continue
+
+            # Create options
+            options, correct_letter = self._create_multiple_choice_options(
+                correct_answer=correct_ranking,
+                distractors=distractors
+            )
+
+            question = {
+                "id": f"{task_type}_{i+1:03d}",
+                "category": "E",
+                "task_type": task_type,
+                "text": template.format(target=target, candidates=candidates_str),
+                "options": options,
+                "correct_answer": correct_letter,
+                "_template": template,
+                "_objects": {
+                    "target": target,
+                    "candidates": candidates_sorted,
+                    "correct_ranking": correct_ranking,
+                    **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[target] += 1
+
+        return questions
+
+    def _generate_e2(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate E2 (pairwise comparison) questions.
+
+        Template: "Which is more similar to '{target}': '{option1}' or '{option2}'?"
+
+        Strategy:
+            1. Sample target descriptor
+            2. Sample two options with clear distance difference
+            3. Closer one is correct answer
+        """
+        questions = []
+        count = config["count"]
+
+        # Handle both "template" and "templates"
+        if "templates" in config:
+            templates = config["templates"]
+        elif "template" in config:
+            templates = [config["template"]]
+        else:
+            templates = ["Which is more similar to '{target}': '{option1}' or '{option2}'?"]
+
+        min_distance_diff = config.get("min_distance_diff", 1)
+
+        for i in range(count):
+            # Sample target
+            target = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if target is None:
+                continue
+
+            # Sample two options with clear distance difference
+            options_with_distances = self.sampler.sample_by_distance(
+                target=target,
+                count=2,
+                require_different_distances=True,
+                min_difference=min_distance_diff
+            )
+
+            if len(options_with_distances) < 2:
+                continue
+
+            # Sort by distance
+            options_sorted = sorted(options_with_distances, key=lambda x: x[1])
+            closer = options_sorted[0][0]
+            farther = options_sorted[1][0]
+
+            # Randomly assign to option1/option2
+            if random.random() < 0.5:
+                option1, option2 = closer, farther
+                correct_answer = "A"
+            else:
+                option1, option2 = farther, closer
+                correct_answer = "B"
+
+            template = random.choice(templates)
+
+            question = {
+                "id": f"{task_type}_{i+1:03d}",
+                "category": "E",
+                "task_type": task_type,
+                "text": template.format(target=target, option1=option1, option2=option2),
+                "options": {"A": option1, "B": option2},
+                "correct_answer": correct_answer,
+                "_template": template,
+                "_objects": {
+                    "target": target,
+                    "option1": option1,
+                    "option2": option2,
+                    "closer": closer,
+                    "farther": farther
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[target] += 1
+
+        return questions
+
+    def _generate_e3(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate E3 (odd one out) questions.
+
+        Template: "Which of these is the odd one out: [{candidates}]"
+
+        Strategy:
+            1. Sample a parent node
+            2. Sample 3 of its children (similar group)
+            3. Sample 1 from different parent (odd one)
+            4. Shuffle and present
+        """
+        questions = []
+        count = config["count"]
+        template = config["template"]
+
+        # Try more attempts to reach target count
+        max_attempts = count * 20
+        attempts = 0
+
+        while len(questions) < count and attempts < max_attempts:
+            attempts += 1
+
+            # Sample a parent with at least 3 children
+            parent = self.sampler.sample_middle()
+            if parent is None:
+                continue
+
+            children = self.graph.get_children(parent)
+            if len(children) < 3:
+                continue
+
+            # Sample 3 children as similar group
+            similar_group = random.sample(children, 3)
+
+            # Sample odd one from different parent
+            odd_one = self.sampler.sample_different_branch(
+                exclude=set(children),
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if odd_one is None:
+                continue
+
+            # Combine and shuffle
+            all_candidates = similar_group + [odd_one]
+            random.shuffle(all_candidates)
+
+            # Build candidate list string
+            candidates_str = ", ".join(all_candidates)
+
+            # Find which letter corresponds to odd one
+            letters = ['A', 'B', 'C', 'D']
+            options = {letter: cand for letter, cand in zip(letters, all_candidates)}
+            correct_letter = [k for k, v in options.items() if v == odd_one][0]
+
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "E",
+                "task_type": task_type,
+                "text": template.format(candidates=candidates_str),
+                "options": options,
+                "correct_answer": correct_letter,
+                "_template": template,
+                "_objects": {
+                    "similar_group": similar_group,
+                    "similar_parent": parent,
+                    "odd_one": odd_one,
+                    "all_candidates": all_candidates
+                }
+            }
+
+            if self.validator.validate(question):
+                questions.append(question)
+                self.descriptor_usage[odd_one] += 1
+
+        return questions
+
+    def _generate_f(self, task_type: str, config: Dict) -> List[Dict]:
+        """
+        Generate F (open-ended reasoning) questions.
+
+        Templates:
+            - "Describe the flavor profile of '{descriptor}' in the context of coffee tasting."
+            - "Explain the relationship between '{descriptor1}' and '{descriptor2}'..."
+
+        Strategy:
+            1. Sample descriptor(s) based on question type
+            2. Generate reference answer from graph structure
+            3. No multiple choice - evaluated by LLM judge
+        """
+        questions = []
+        count = config["count"]
+        templates = config["templates"]
+
+        # Distribution: 6 single_descriptor, 4 descriptor_pair, 2 category_overview
+        single_desc_count = 6
+        pair_count = 4
+        category_count = 2
+
+        # Generate single descriptor questions
+        for i in range(single_desc_count):
+            descriptor = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor is None:
+                continue
+
+            # Generate reference answer
+            ancestors = self.graph.get_ancestors(descriptor)
+            children = self.graph.get_children(descriptor)
+
+            reference_answer = self._build_reference_answer_single(
+                descriptor, ancestors, children
+            )
+
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "F",
+                "task_type": task_type,
+                "text": templates[0].format(descriptor=descriptor),  # Single descriptor template
+                "options": {},  # No options for open-ended
+                "correct_answer": None,  # No single correct answer
+                "reference_answer": reference_answer,
+                "evaluation_method": "llm_judge",
+                "_template": templates[0],
+                "_objects": {
+                    "descriptor": descriptor,
+                    "question_subtype": "single_descriptor"
+                }
+            }
+
+            questions.append(question)
+            self.descriptor_usage[descriptor] += 1
+
+        # Generate descriptor pair questions
+        for i in range(pair_count):
+            descriptor1 = self.sampler.sample_any(
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor1 is None:
+                continue
+
+            descriptor2 = self.sampler.sample_any(
+                exclude={descriptor1},
+                exclude_overused=True,
+                max_usage=self.max_reuse,
+                usage_tracker=self.descriptor_usage
+            )
+
+            if descriptor2 is None:
+                continue
+
+            # Generate reference answer
+            lca = self.graph.find_lca(descriptor1, descriptor2)
+            distance = self.graph.get_path_distance(descriptor1, descriptor2)
+
+            reference_answer = self._build_reference_answer_pair(
+                descriptor1, descriptor2, lca, distance
+            )
+
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "F",
+                "task_type": task_type,
+                "text": templates[2].format(descriptor1=descriptor1, descriptor2=descriptor2),
+                "options": {},
+                "correct_answer": None,
+                "reference_answer": reference_answer,
+                "evaluation_method": "llm_judge",
+                "_template": templates[2],
+                "_objects": {
+                    "descriptor1": descriptor1,
+                    "descriptor2": descriptor2,
+                    "question_subtype": "descriptor_pair"
+                }
+            }
+
+            questions.append(question)
+            self.descriptor_usage[descriptor1] += 1
+            self.descriptor_usage[descriptor2] += 1
+
+        # Generate category overview questions
+        for i in range(category_count):
+            # Sample a root category
+            root_categories = self.graph.get_root_categories()
+            if not root_categories:
+                continue
+
+            category = random.choice(root_categories)
+            children = self.graph.get_children(category)
+
+            reference_answer = self._build_reference_answer_category(category, children)
+
+            # Use descriptor template but with category
+            question = {
+                "id": f"{task_type}_{len(questions)+1:03d}",
+                "category": "F",
+                "task_type": task_type,
+                "text": templates[0].format(descriptor=category),  # Reuse single descriptor template
+                "options": {},
+                "correct_answer": None,
+                "reference_answer": reference_answer,
+                "evaluation_method": "llm_judge",
+                "_template": templates[0],
+                "_objects": {
+                    "descriptor": category,
+                    "question_subtype": "category_overview"
+                }
+            }
+
+            questions.append(question)
+
+        return questions[:count]  # Return up to count
+
+    def _build_reference_answer_single(self, descriptor: str, ancestors: List[str], children: List[str]) -> str:
+        """Build reference answer for single descriptor question."""
+        parts = [f"'{descriptor}' is a coffee flavor descriptor."]
+
+        if ancestors:
+            path = " → ".join(list(reversed(ancestors)) + [descriptor])
+            parts.append(f"Hierarchically, it is classified as: {path}")
+
+        if children:
+            children_str = ", ".join(children)
+            parts.append(f"It includes specific flavors such as: {children_str}")
+
+        return " ".join(parts)
+
+    def _build_reference_answer_pair(
+        self, descriptor1: str, descriptor2: str, lca: Optional[str], distance: Optional[int]
+    ) -> str:
+        """Build reference answer for descriptor pair question."""
+        parts = [f"Comparing '{descriptor1}' and '{descriptor2}':"]
+
+        if lca:
+            parts.append(f"They share a common ancestor: '{lca}'")
+
+        if distance:
+            parts.append(f"The graph distance between them is {distance} levels")
+            if distance <= 2:
+                parts.append("suggesting they are relatively similar flavors")
+            elif distance <= 4:
+                parts.append("suggesting they are moderately related")
+            else:
+                parts.append("suggesting they are quite distinct flavors")
+
+        return " ".join(parts)
+
+    def _build_reference_answer_category(self, category: str, children: List[str]) -> str:
+        """Build reference answer for category overview question."""
+        parts = [f"'{category}' is a root category in the coffee flavor wheel."]
+
+        if children:
+            children_str = ", ".join(children[:5])  # Limit to 5 for readability
+            parts.append(f"It encompasses flavors including: {children_str}")
+            if len(children) > 5:
+                parts.append(f"and {len(children)-5} others")
+
+        return " ".join(parts)
+
+    def _create_multiple_choice_options(
+        self,
+        correct_answer: str,
+        distractors: List[str]
+    ) -> Tuple[Dict[str, str], str]:
+        """
+        Create A/B/C/D options with shuffling.
+
+        Args:
+            correct_answer: The correct answer
+            distractors: List of wrong answers
+
+        Returns:
+            (options_dict, correct_letter)
+
+        Example:
+            >>> options, correct = self._create_multiple_choice_options(
+            ...     "fruity",
+            ...     ["floral", "nutty/cocoa", "spices"]
+            ... )
+            >>> print(options)  # {'A': 'nutty/cocoa', 'B': 'fruity', 'C': 'floral', 'D': 'spices'}
+            >>> print(correct)  # 'B'
+        """
+        all_options = [correct_answer] + distractors
+        random.shuffle(all_options)
+
+        letters = ['A', 'B', 'C', 'D']
+        options = {letter: option for letter, option in zip(letters, all_options)}
+
+        # Find correct letter
+        correct_letter = [k for k, v in options.items() if v == correct_answer][0]
+
+        return options, correct_letter
+
+    def save_questions(self, questions: List[Dict], output_path: str):
+        """
+        Save questions to JSON file.
+
+        Args:
+            questions: List of question dicts
+            output_path: Path to output JSON file
+
+        Example:
+            >>> generator.save_questions(questions, "data/questions/generated.json")
+        """
+        import json
+        from pathlib import Path
+
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Add metadata
+        output_data = {
+            "metadata": {
+                "total_count": len(questions),
+                "by_category": self._count_by_category(questions),
+                "by_task_type": self._count_by_task_type(questions),
+                "random_seed": self.random_seed,
+                "generated_at": self._get_timestamp()
+            },
+            "questions": questions
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(output_data, f, indent=2)
+
+    def _count_by_category(self, questions: List[Dict]) -> Dict[str, int]:
+        """Count questions by category."""
+        counts = defaultdict(int)
+        for q in questions:
+            counts[q["category"]] += 1
+        return dict(counts)
+
+    def _count_by_task_type(self, questions: List[Dict]) -> Dict[str, int]:
+        """Count questions by task type."""
+        counts = defaultdict(int)
+        for q in questions:
+            counts[q["task_type"]] += 1
+        return dict(counts)
+
+    def _get_timestamp(self) -> str:
+        """Get ISO timestamp."""
+        from datetime import datetime
+        return datetime.now().isoformat()
+
+    @staticmethod
+    def deduplicate_questions(questions: List[Dict], by_field: str = 'descriptor') -> Tuple[List[Dict], List[Dict]]:
+        """
+        Remove duplicate questions based on a field in _objects.
+
+        Args:
+            questions: List of question dicts
+            by_field: Field in _objects to check for duplicates (default: 'descriptor')
+
+        Returns:
+            Tuple of (unique_questions, duplicates)
+
+        Example:
+            >>> unique, dupes = QuestionGenerator.deduplicate_questions(questions)
+            >>> print(f"Kept {len(unique)}, removed {len(dupes)} duplicates")
+        """
+        seen = {}
+        unique = []
+        duplicates = []
+
+        for q in questions:
+            # Get the field value from _objects
+            if '_objects' not in q or by_field not in q['_objects']:
+                unique.append(q)
+                continue
+
+            value = q['_objects'][by_field]
+
+            # Check if we've seen this value before
+            if value in seen:
+                # This is a duplicate
+                duplicates.append(q)
+            else:
+                # First occurrence, keep it
+                seen[value] = q
+                unique.append(q)
+
+        return unique, duplicates

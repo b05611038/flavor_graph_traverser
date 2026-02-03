@@ -31,6 +31,11 @@ data/filtering/whitelist.txt
 data/questions/questions_complete.json
 data/questions/sample_questions.json
 
+# Audit data (human review results - keep safe, don't commit)
+data/audit_state.json
+data/audit_results/
+data/flagged_questions.jsonl
+
 # But include example files
 !data/graphs/example_graph.pkl
 !data/filtering/example_filtered_nodes.json
@@ -40,3 +45,8 @@ data/questions/sample_questions.json
 
 # Reference code (internal)
 reference_code/
+
+# Evaluation results and logs (generated during runs)
+logs/
+results/cache/
+results/*/

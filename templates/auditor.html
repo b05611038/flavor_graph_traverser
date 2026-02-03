@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Auditor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            opacity: 0.9;
+            font-size: 12px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: rgba(255,255,255,0.3);
+            margin-top: 15px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4ade80;
+            transition: width 0.3s ease;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .question-meta {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .badge-category {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-task {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .duplicate-warning {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #991b1b;
+        }
+
+        .duplicate-warning strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .view-section {
+            margin-bottom: 30px;
+        }
+
+        .view-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #374151;
+            display: flex;
+            align-items: center;
+        }
+
+        .view-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 20px;
+            background: #667eea;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
+        .view-content {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 20px;
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .llm-view {
+            background: #fef9e7;
+            border-color: #f59e0b;
+        }
+
+        .annotated-view {
+            background: #f0fdf4;
+            border-color: #10b981;
+        }
+
+        .actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-confirm {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-confirm:hover {
+            background: #059669;
+        }
+
+        .btn-flag {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-flag:hover {
+            background: #dc2626;
+        }
+
+        .btn-skip {
+            background: #6b7280;
+            color: white;
+            flex: 0.5;
+        }
+
+        .btn-skip:hover {
+            background: #4b5563;
+        }
+
+        .done-message {
+            text-align: center;
+            padding: 60px 30px;
+        }
+
+        .done-message h2 {
+            font-size: 32px;
+            color: #10b981;
+            margin-bottom: 10px;
+        }
+
+        .done-message p {
+            font-size: 18px;
+            color: #6b7280;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+            color: #374151;
+        }
+
+        .modal-content label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .modal-content input,
+        .modal-content textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-family: inherit;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #6b7280;
+        }
+
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Question Auditor</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-value" id="confirmed-count">0</span>
+                    <span class="stat-label">Confirmed</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="flagged-count">0</span>
+                    <span class="stat-label">Flagged</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="pending-count">0</span>
+                    <span class="stat-label">Pending</span>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
+
+        <div class="content" id="content">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Loading questions...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flag Modal -->
+    <div class="modal" id="flag-modal">
+        <div class="modal-content">
+            <h3>Flag Question for Review</h3>
+            <label>Reason:</label>
+            <input type="text" id="flag-reason" placeholder="e.g., Ambiguous wording, Wrong answer, etc.">
+            <label>Notes (optional):</label>
+            <textarea id="flag-notes" rows="3" placeholder="Additional details..."></textarea>
+            <div class="modal-actions">
+                <button class="btn btn-flag" onclick="submitFlag()">Submit Flag</button>
+                <button class="btn btn-skip" onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentQuestion = null;
+        let isProcessing = false;  // Prevent double-clicks during API calls
+
+        async function loadStats() {
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+
+            document.getElementById('confirmed-count').textContent = stats.confirmed;
+            document.getElementById('flagged-count').textContent = stats.flagged;
+            document.getElementById('pending-count').textContent = stats.pending;
+            document.getElementById('progress-fill').style.width = stats.progress_percent + '%';
+        }
+
+        async function loadCurrentQuestion() {
+            const response = await fetch('/api/current');
+            const data = await response.json();
+
+            if (data.done) {
+                showDoneMessage(data.message);
+                return;
+            }
+
+            currentQuestion = data;
+            displayQuestion(data);
+            await loadStats();
+        }
+
+        function displayQuestion(q) {
+            let html = `
+                <div class="question-header">
+                    <div class="question-meta">
+                        <strong>Question ID:</strong> ${q.id}
+                        <span class="badge badge-category">${q.category}</span>
+                        <span class="badge badge-task">${q.task_type}</span>
+                    </div>
+                    <div class="question-meta">
+                        <strong>${q.pending_count}</strong> questions remaining
+                    </div>
+                </div>
+            `;
+
+            if (q.is_duplicate) {
+                html += `
+                    <div class="duplicate-warning">
+                        <strong>⚠️ Potential Duplicate!</strong>
+                        This question appears to be a duplicate of: <strong>${q.duplicate_of}</strong>
+                    </div>
+                `;
+            }
+
+            html += `
+                <div class="view-section">
+                    <div class="view-title">📄 What the LLM Sees</div>
+                    <div class="view-content llm-view">${escapeHtml(q.llm_view)}</div>
+                </div>
+
+                <div class="view-section">
+                    <div class="view-title">🔍 Annotated View (Template + Objects)</div>
+                    <div class="view-content annotated-view">${escapeHtml(q.annotated_view)}</div>
+                </div>
+
+                <div class="actions">
+                    <button class="btn btn-confirm" onclick="confirmQuestion()">
+                        ✅ Confirm - Looks Good
+                    </button>
+                    <button class="btn btn-flag" onclick="openFlagModal()">
+                        🚩 Flag for Review
+                    </button>
+                    <button class="btn btn-skip" onclick="skipQuestion()">
+                        Skip
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('content').innerHTML = html;
+        }
+
+        function showDoneMessage(message) {
+            const html = `
+                <div class="done-message">
+                    <h2>🎉 ${message}</h2>
+                    <p>All questions have been reviewed.</p>
+                </div>
+            `;
+            document.getElementById('content').innerHTML = html;
+        }
+
+        async function confirmQuestion() {
+            if (!currentQuestion || isProcessing) return;
+
+            isProcessing = true;
+            console.log('Confirming question:', currentQuestion.id);
+
+            try {
+                await fetch('/api/confirm', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({question_id: currentQuestion.id})
+                });
+
+                await loadCurrentQuestion();
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        function openFlagModal() {
+            document.getElementById('flag-modal').classList.add('active');
+            document.getElementById('flag-reason').value = '';
+            document.getElementById('flag-notes').value = '';
+            document.getElementById('flag-reason').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('flag-modal').classList.remove('active');
+        }
+
+        async function submitFlag() {
+            if (!currentQuestion || isProcessing) return;
+
+            isProcessing = true;
+            console.log('Flagging question:', currentQuestion.id);
+
+            const reason = document.getElementById('flag-reason').value || 'No reason provided';
+            const notes = document.getElementById('flag-notes').value;
+
+            try {
+                await fetch('/api/flag', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        question_id: currentQuestion.id,
+                        reason: reason,
+                        notes: notes
+                    })
+                });
+
+                closeModal();
+                await loadCurrentQuestion();
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        async function skipQuestion() {
+            if (!currentQuestion || isProcessing) return;
+
+            isProcessing = true;
+            console.log('Skipping question:', currentQuestion.id);
+
+            try {
+                await fetch('/api/skip', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({question_id: currentQuestion.id})
+                });
+
+                await loadCurrentQuestion();
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial load
+        loadCurrentQuestion();
+    </script>
+</body>
+</html>
