@@ -190,10 +190,26 @@ class QuestionEvaluator:
         
         # Format options
         options_text = "\n".join([f"({key}) {value}" for key, value in sorted(options.items())])
-        
-        # Add answer format instruction
-        answer_format = self.common_config["answer_format"]
-        
+
+        # Add answer format instruction (dynamic based on number of options)
+        option_keys = sorted(options.keys())
+        if len(option_keys) == 0:
+            # Open-ended question (e.g., F_flavor_description)
+            answer_format = "Provide your answer in a clear, detailed response."
+        elif len(option_keys) == 1:
+            options_list = option_keys[0]
+            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select ({options_list})".'
+        elif len(option_keys) == 2:
+            options_list = f"{option_keys[0]} or {option_keys[1]}"
+            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
+        elif len(option_keys) == 3:
+            options_list = f"{option_keys[0]}, {option_keys[1]}, or {option_keys[2]}"
+            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
+        else:
+            # For 4+ options: A, B, C, or D
+            options_list = ", ".join(option_keys[:-1]) + f", or {option_keys[-1]}"
+            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
+
         user_message = f"{question_text}\n\n{options_text}\n\n{answer_format}"
         messages.append(Message(role="user", content=user_message))
         
