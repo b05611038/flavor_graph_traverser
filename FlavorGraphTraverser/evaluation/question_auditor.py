@@ -184,12 +184,29 @@ Use this exact format: "Therefore, I select (X, Y, Z)" where X, Y, Z are the cor
 If none apply, respond: "Therefore, I select (NONE)"
 """
     else:
+        # Generate dynamic answer format based on number of options
+        option_keys = sorted(options.keys())
+        if len(option_keys) == 0:
+            answer_instruction = "Provide your answer in a clear, detailed response."
+        elif len(option_keys) == 1:
+            answer_instruction = f'"Therefore, I select ({option_keys[0]})".'
+        elif len(option_keys) == 2:
+            options_list = f"{option_keys[0]} or {option_keys[1]}"
+            answer_instruction = f'"Therefore, I select (X)" where X is {options_list}.'
+        elif len(option_keys) == 3:
+            options_list = f"{option_keys[0]}, {option_keys[1]}, or {option_keys[2]}"
+            answer_instruction = f'"Therefore, I select (X)" where X is {options_list}.'
+        else:
+            # For 4+ options
+            options_list = ", ".join(option_keys[:-1]) + f", or {option_keys[-1]}"
+            answer_instruction = f'"Therefore, I select (X)" where X is {options_list}.'
+
         llm_view = f"""{text}
 
 {options_text}
 
 When providing your final answer, use this exact format:
-"Therefore, I select (X)" where X is A, B, C, or D.
+{answer_instruction}
 """
 
     # Annotated view with template/objects highlighted
