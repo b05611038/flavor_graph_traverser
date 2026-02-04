@@ -28,8 +28,10 @@ data/graphs/system_graph_data.json
 data/filtering/filtered_nodes_review.json
 data/filtering/blacklist.txt
 data/filtering/whitelist.txt
-data/questions/questions_complete.json
-data/questions/sample_questions.json
+
+# Exclude all question data (keep only examples)
+data/questions/*.json
+data/sample_questions_for_audit.json
 
 # Audit data (human review results - keep safe, don't commit)
 data/audit_state.json
