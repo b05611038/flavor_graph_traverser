@@ -2,6 +2,9 @@
 Question Auditor - State Manager
 
 Manages question audit state: pending, confirmed, flagged.
+
+NOTE: This is now a backwards-compatible wrapper around AuditStateManager.
+New code should use AuditStateManager directly.
 """
 
 import json
@@ -10,95 +13,87 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-
-@dataclass
-class QuestionAuditState:
-    """State of a question in the audit process."""
-    question_id: str
-    status: str  # "pending", "confirmed", "flagged"
-    timestamp: str
-    notes: Optional[str] = None
-    flag_reason: Optional[str] = None
+# Import new state manager
+from FlavorGraphTraverser.evaluation.audit_state_manager import (
+    AuditStateManager,
+    QuestionAuditState,
+    CANONICAL_STATE_FILE
+)
 
 
 class QuestionAuditor:
     """
     Manages question audit workflow.
 
+    This is a backwards-compatible wrapper around AuditStateManager.
     Tracks which questions are confirmed, flagged, or pending.
     Checks for duplicates against confirmed questions.
     """
 
-    def __init__(self, state_file: str = "data/audit_state.json"):
+    def __init__(self, state_file: Optional[str] = None, read_only: bool = False):
         """
         Initialize auditor.
 
         Args:
-            state_file: Path to JSON file storing audit state
+            state_file: Path to JSON file storing audit state (defaults to canonical)
+            read_only: If True, prevents writes (useful for review interface)
         """
-        self.state_file = Path(state_file)
-        self.states: Dict[str, QuestionAuditState] = {}
-        self.load_state()
+        # Use new state manager
+        if state_file:
+            self._manager = AuditStateManager(Path(state_file), read_only=read_only)
+        else:
+            self._manager = AuditStateManager(read_only=read_only)
+
+        # Expose state_file and states for backwards compatibility
+        self.state_file = self._manager.state_file
+        self.states = self._manager.states
+        self.read_only = read_only
 
     def load_state(self):
         """Load audit state from file."""
-        if self.state_file.exists():
-            with open(self.state_file, 'r') as f:
-                data = json.load(f)
-                for qid, state_dict in data.items():
-                    self.states[qid] = QuestionAuditState(**state_dict)
+        self._manager.load_state()
+        self.states = self._manager.states
+
+    def reload_state(self):
+        """Reload state from file (useful for read-only mode)."""
+        self._manager.reload_state()
+        self.states = self._manager.states
 
     def save_state(self):
         """Save audit state to file."""
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.state_file, 'w') as f:
-            data = {qid: asdict(state) for qid, state in self.states.items()}
-            json.dump(data, f, indent=2)
+        self._manager.save_state()
+        self.states = self._manager.states
 
     def get_status(self, question_id: str) -> str:
         """Get status of a question."""
-        if question_id in self.states:
-            return self.states[question_id].status
-        return "pending"
+        return self._manager.get_status(question_id)
 
     def confirm_question(self, question_id: str, notes: Optional[str] = None):
         """Mark question as confirmed."""
-        self.states[question_id] = QuestionAuditState(
-            question_id=question_id,
-            status="confirmed",
-            timestamp=datetime.now().isoformat(),
-            notes=notes
-        )
-        self.save_state()
+        self._manager.confirm_question(question_id, notes)
+        self.states = self._manager.states
 
     def flag_question(self, question_id: str, reason: str, notes: Optional[str] = None):
         """Mark question as flagged for review."""
-        self.states[question_id] = QuestionAuditState(
-            question_id=question_id,
-            status="flagged",
-            timestamp=datetime.now().isoformat(),
-            flag_reason=reason,
-            notes=notes
-        )
-        self.save_state()
+        self._manager.flag_question(question_id, reason, notes)
+        self.states = self._manager.states
 
     def unflag_question(self, question_id: str):
         """Remove flag from question (back to pending)."""
-        if question_id in self.states:
-            del self.states[question_id]
-            self.save_state()
+        self._manager.unflag_question(question_id)
+        self.states = self._manager.states
 
     def get_confirmed_questions(self) -> List[str]:
         """Get list of confirmed question IDs."""
-        return [qid for qid, state in self.states.items() if state.status == "confirmed"]
+        return self._manager.get_confirmed_questions()
 
     def get_flagged_questions(self) -> List[str]:
         """Get list of flagged question IDs."""
-        return [qid for qid, state in self.states.items() if state.status == "flagged"]
+        return self._manager.get_flagged_questions()
 
     def get_pending_questions(self, all_question_ids: List[str]) -> List[str]:
         """Get list of pending question IDs."""
-        return [qid for qid in all_question_ids if self.get_status(qid) == "pending"]
+        return self._manager.get_pending_questions(all_question_ids)
 
     def check_duplicate(self, question: Dict, confirmed_questions: List[Dict]) -> Optional[str]:
         """
@@ -126,12 +121,7 @@ class QuestionAuditor:
 
     def get_stats(self) -> Dict[str, int]:
         """Get audit statistics."""
-        stats = {
-            "confirmed": len([s for s in self.states.values() if s.status == "confirmed"]),
-            "flagged": len([s for s in self.states.values() if s.status == "flagged"]),
-            "total_reviewed": len(self.states)
-        }
-        return stats
+        return self._manager.get_stats()
 
 
 def format_question_for_display(question: Dict) -> Dict[str, str]:

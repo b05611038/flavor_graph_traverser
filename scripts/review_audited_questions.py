@@ -23,7 +23,7 @@ auditor = None
 questions_file = None
 
 
-def load_data(questions_path, audit_state_path):
+def load_data(questions_path, audit_state_path, read_only=True):
     """Load questions and audit state."""
     global questions_data, auditor, questions_file
 
@@ -32,7 +32,7 @@ def load_data(questions_path, audit_state_path):
     with open(questions_path, 'r') as f:
         questions_data = json.load(f)
 
-    auditor = QuestionAuditor(state_file=audit_state_path)
+    auditor = QuestionAuditor(state_file=audit_state_path, read_only=read_only)
 
 
 @app.route('/')
@@ -43,7 +43,10 @@ def index():
 
 @app.route('/api/stats')
 def get_stats():
-    """Get audit statistics."""
+    """Get audit statistics (with auto-reload)."""
+    # Reload state from file to get latest changes
+    auditor.reload_state()
+
     stats = auditor.get_stats()
 
     all_questions = questions_data['questions']
@@ -61,7 +64,10 @@ def get_stats():
 
 @app.route('/api/confirmed')
 def get_confirmed():
-    """Get all confirmed questions."""
+    """Get all confirmed questions (with auto-reload)."""
+    # Reload state from file to get latest changes
+    auditor.reload_state()
+
     confirmed_ids = auditor.get_confirmed_questions()
 
     questions = []
@@ -79,7 +85,10 @@ def get_confirmed():
 
 @app.route('/api/flagged')
 def get_flagged():
-    """Get all flagged questions."""
+    """Get all flagged questions (with auto-reload)."""
+    # Reload state from file to get latest changes
+    auditor.reload_state()
+
     flagged_ids = auditor.get_flagged_questions()
 
     questions = []
@@ -138,30 +147,54 @@ def confirm_flagged():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Review audited questions')
+    parser = argparse.ArgumentParser(
+        description='Review audited questions (Read-Only Interface)',
+        epilog='This is a READ-ONLY interface that auto-reloads state changes. '
+               'Use audit_questions_web.py to modify question status.'
+    )
     parser.add_argument('questions_file', help='Path to questions JSON file')
-    parser.add_argument('--audit-state', default='data/audit_state.json',
-                       help='Path to audit state file')
-    parser.add_argument('--port', type=int, default=5001,
-                       help='Port to run on (default: 5001)')
+    parser.add_argument(
+        '--audit-state',
+        default=None,
+        help='Path to audit state file (default: canonical location at data/audit_results/audit_state.json)'
+    )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=5001,
+        help='Port to run on (default: 5001)'
+    )
+    parser.add_argument(
+        '--read-write',
+        action='store_true',
+        help='Enable write access (NOT recommended - use audit_questions_web.py instead)'
+    )
 
     args = parser.parse_args()
 
+    # Determine read-only mode
+    read_only = not args.read_write
+
     # Load data
     print(f"Loading questions from: {args.questions_file}")
-    load_data(args.questions_file, args.audit_state)
+    print(f"Loading audit state from: {args.audit_state or 'canonical location'}")
+    print(f"Mode: {'READ-WRITE (not recommended)' if not read_only else 'READ-ONLY (auto-reload enabled)'}")
+    load_data(args.questions_file, args.audit_state, read_only=read_only)
 
     stats = auditor.get_stats()
     print(f"\nAudit Status:")
     print(f"  Confirmed: {stats['confirmed']}")
     print(f"  Flagged: {stats['flagged']}")
+    print(f"  State file: {auditor.state_file}")
     print()
 
     print("="*70)
-    print("📋 Question Review Interface")
+    print(f"📋 Question Review Interface ({'READ-ONLY' if read_only else 'READ-WRITE'})")
     print("="*70)
     print()
     print(f"Open in browser: http://localhost:{args.port}")
+    if read_only:
+        print(f"Auto-reload: Updates from auditor will appear automatically")
     print()
     print("Press Ctrl+C to stop")
     print("="*70)

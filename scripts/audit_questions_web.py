@@ -170,15 +170,19 @@ def main():
     """Run the web auditor."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Question Auditor Web Interface")
+    parser = argparse.ArgumentParser(
+        description="Question Auditor Web Interface (Read/Write)",
+        epilog="Note: This interface writes to the audit state file. "
+               "Use review_audited_questions.py for read-only viewing."
+    )
     parser.add_argument(
         'questions_file',
         help="Path to questions JSON file"
     )
     parser.add_argument(
         '--state-file',
-        default='data/audit_state.json',
-        help="Path to audit state file (default: data/audit_state.json)"
+        default=None,
+        help="Path to audit state file (default: canonical location at data/audit_results/audit_state.json)"
     )
     parser.add_argument(
         '--port',
@@ -191,7 +195,7 @@ def main():
 
     # Initialize
     global auditor
-    auditor = QuestionAuditor(state_file=args.state_file)
+    auditor = QuestionAuditor(state_file=args.state_file, read_only=False)
 
     # Load questions
     print(f"Loading questions from: {args.questions_file}")
