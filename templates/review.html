@@ -172,6 +172,13 @@
         .badge-task {
             background: #dbeafe;
             color: #1e40af;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .badge-task:hover {
+            background: #bfdbfe;
+            transform: translateY(-1px);
         }
 
         .badge-category {
@@ -340,7 +347,7 @@
             </div>
             <div class="filter-group">
                 <label>Search:</label>
-                <input type="text" id="search-input" placeholder="Search descriptor..." onkeyup="applyFilters()">
+                <input type="text" id="search-input" placeholder="Search descriptor..." onkeyup="applySearchFilters()">
             </div>
             <button class="btn-refresh" onclick="refreshAll()">
                 🔄 Refresh
@@ -373,14 +380,18 @@
         }
 
         async function loadConfirmed() {
-            const response = await fetch('/api/confirmed');
+            const taskFilter = document.getElementById('filter-task').value;
+            const url = taskFilter ? `/api/confirmed?task_type=${taskFilter}` : '/api/confirmed';
+            const response = await fetch(url);
             const data = await response.json();
             confirmedQuestions = data.questions;
             renderConfirmed();
         }
 
         async function loadFlagged() {
-            const response = await fetch('/api/flagged');
+            const taskFilter = document.getElementById('filter-task').value;
+            const url = taskFilter ? `/api/flagged?task_type=${taskFilter}` : '/api/flagged';
+            const response = await fetch(url);
             const data = await response.json();
             flaggedQuestions = data.questions;
             renderFlagged();
@@ -471,7 +482,7 @@
                     <div class="question-header">
                         <div class="question-meta">
                             <strong>${q.id}</strong>
-                            <span class="badge badge-task">${q.task_type}</span>
+                            <span class="badge badge-task" onclick="filterByTaskType('${q.task_type}')" title="Click to filter by ${q.task_type}">${q.task_type}</span>
                             <span class="badge badge-category">${q.category}</span>
                             ${q.descriptor ? `<span class="badge badge-category">${q.descriptor}</span>` : ''}
                         </div>
@@ -510,6 +521,23 @@
         }
 
         function applyFilters() {
+            // Reload data with task type filter from server
+            const activeTab = document.querySelector('.tab.active').dataset.tab;
+            if (activeTab === 'confirmed') {
+                loadConfirmed();
+            } else if (activeTab === 'flagged') {
+                loadFlagged();
+            }
+        }
+
+        function filterByTaskType(taskType) {
+            // Extract just the task prefix (e.g., "A1_root_classification" -> "A1_root_classification")
+            // The dropdown uses short format like "A1_root_classification"
+            document.getElementById('filter-task').value = taskType;
+            applyFilters();
+        }
+
+        function applySearchFilters() {
             const taskFilter = document.getElementById('filter-task').value;
             const searchTerm = document.getElementById('search-input').value.toLowerCase();
 

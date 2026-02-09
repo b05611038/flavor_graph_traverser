@@ -23,6 +23,8 @@ Example:
 
 import random
 import yaml
+import hashlib
+import uuid
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -89,7 +91,8 @@ class QuestionGenerator:
         graph: CoffeeDescriptionGraph,
         templates_path: Optional[str] = None,
         random_seed: Optional[int] = None,
-        exclude_descriptors: Optional[set] = None
+        exclude_descriptors: Optional[set] = None,
+        tool_graph_nodes: Optional[set] = None
     ):
         """
         Initialize question generator.
@@ -98,10 +101,14 @@ class QuestionGenerator:
             graph: CoffeeDescriptionGraph instance
             templates_path: Path to templates YAML (default: configs/question_templates.yaml)
             random_seed: Random seed for reproducibility (default: from config or 42)
-            exclude_descriptors: Set of descriptors to exclude from questions (e.g., to prevent data leakage)
+            exclude_descriptors: Set of descriptors to exclude from sampling (e.g., to prevent data leakage)
+            tool_graph_nodes: Set of ALL node names in the tool graph. Used by the validator to reject
+                              questions where any component (descriptor, sibling, distractor) appears
+                              in the tool graph.
         """
         self.graph = graph
         self.exclude_descriptors = exclude_descriptors or set()
+        self.tool_graph_nodes = tool_graph_nodes or set()
 
         # Load templates
         if templates_path is None:
@@ -122,11 +129,32 @@ class QuestionGenerator:
             global_exclude=self.exclude_descriptors
         )
         self.distractor_gen = DistractorGenerator(graph, random_seed=self.random_seed)
-        self.validator = QuestionValidator(graph)
+        self.validator = QuestionValidator(graph, tool_graph_nodes=self.tool_graph_nodes)
 
-        # Track descriptor usage for diversity
+        # Track descriptor usage for diversity (per task type)
+        self.descriptor_usage_by_type = defaultdict(lambda: defaultdict(int))
+        # Also keep global usage for cross-type diversity
         self.descriptor_usage = defaultdict(int)
         self.max_reuse = self.config.get("settings", {}).get("diversity", {}).get("max_descriptor_reuse", 3)
+
+    @staticmethod
+    def _generate_uuid_id(task_type: str) -> str:
+        """
+        Generate unique ID using UUID4.
+
+        Args:
+            task_type: Task type prefix (e.g., "A2_ancestor_verification")
+
+        Returns:
+            ID like "A2_ancestor_verification_a1b2c3d4"
+
+        Example:
+            >>> QuestionGenerator._generate_uuid_id("A2_ancestor_verification")
+            "A2_ancestor_verification_f47ac10b"
+        """
+        # Generate UUID4 and take first 8 characters
+        uuid_str = str(uuid.uuid4()).replace('-', '')[:8]
+        return f"{task_type}_{uuid_str}"
 
     def generate_all(self) -> List[Dict[str, Any]]:
         """
@@ -268,9 +296,14 @@ class QuestionGenerator:
         non_flavor_roots = {'taste', 'defected', 'baked', 'ROOT:SYSTEM'}
         all_roots = [r for r in all_roots if r not in non_flavor_roots]
 
+        # Track descriptors used in this task type to prevent duplicates
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         for i in range(count):
-            # Sample leaf descriptor
+            # Sample leaf descriptor (exclude already used in this task type)
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_leaf(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -327,13 +360,22 @@ class QuestionGenerator:
             if 'defected' in options.values():
                 question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
-            # Create question with multi-label format
+            # Create question with UUID-based ID
+            content_id = self._generate_uuid_id(task_type)
+
+
             question = {
-                "id": f"{task_type}_{i+1:03d}",
+
+                "id": content_id,
+
                 "category": "A",
+
                 "task_type": task_type,
+
                 "text": question_text,
+
                 "options": options,
+
                 "correct_answer": correct_answer,  # List of correct letters
                 "answer_format": "multi_label",  # Indicates multiple selections allowed
                 "_template": template,
@@ -346,10 +388,11 @@ class QuestionGenerator:
                 "_evaluation_note": "Multi-label: Model must select ALL and ONLY the valid roots in options. Can be 0, 1, or multiple correct answers."
             }
 
-            # Validate
+            # Validate (includes leakage check)
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[descriptor] += 1
+                type_usage[descriptor] += 1
 
         return questions
 
@@ -378,9 +421,14 @@ class QuestionGenerator:
         true_count = count // 2
         false_count = count - true_count
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         # Generate TRUE questions
         for i in range(true_count):
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -397,8 +445,11 @@ class QuestionGenerator:
             ancestor = random.choice(ancestors)
             template = random.choice(templates)
 
+            # Generate UUID-based ID
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+                "id": content_id,
                 "category": "A",
                 "task_type": task_type,
                 "text": template.format(descriptor=descriptor, ancestor=ancestor),
@@ -415,10 +466,13 @@ class QuestionGenerator:
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[descriptor] += 1
+                type_usage[descriptor] += 1
 
         # Generate FALSE questions
         for i in range(false_count):
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -435,8 +489,11 @@ class QuestionGenerator:
 
             template = random.choice(templates)
 
+            # Generate UUID-based ID
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+                "id": content_id,
                 "category": "A",
                 "task_type": task_type,
                 "text": template.format(descriptor=descriptor, ancestor=non_ancestor),
@@ -453,6 +510,7 @@ class QuestionGenerator:
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[descriptor] += 1
+                type_usage[descriptor] += 1
 
         return questions
 
@@ -476,11 +534,16 @@ class QuestionGenerator:
         max_attempts = count * 10
         attempts = 0
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         while len(questions) < count and attempts < max_attempts:
             attempts += 1
 
-            # Sample middle descriptor
+            # Sample middle descriptor (exclude already used in this task type)
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_middle(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -517,25 +580,56 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
+            # Generate content-based ID
+
+
+            content_id = self._generate_uuid_id(task_type)
+
+
+
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+
+
+                "id": content_id,
+
+
                 "category": "A",
+
+
                 "task_type": task_type,
+
+
                 "text": template.format(descriptor=descriptor),
+
+
                 "options": options,
+
+
                 "correct_answer": correct_letter,
+
+
                 "_template": template,
+
+
                 "_objects": {
+
+
                     "descriptor": descriptor,
+
+
                     "parent": parent,
+
+
                     "correct_sibling": correct_sibling,
                     **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
                 }
             }
 
+            # Validate (includes leakage check for descriptor, sibling, and distractors)
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[descriptor] += 1
+                type_usage[descriptor] += 1
 
         return questions
 
@@ -554,9 +648,14 @@ class QuestionGenerator:
         count = config["count"]
         template = config["template"]
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         for i in range(count):
-            # Sample leaf descriptor
+            # Sample leaf descriptor (exclude already used in this task type)
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_leaf(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -589,16 +688,43 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
+            # Generate content-based ID
+
+
+            content_id = self._generate_uuid_id(task_type)
+
+
+
             question = {
-                "id": f"{task_type}_{i+1:03d}",
+
+
+                "id": content_id,
+
+
                 "category": "A",
+
+
                 "task_type": task_type,
+
+
                 "text": template.format(descriptor=descriptor),
+
+
                 "options": options,
+
+
                 "correct_answer": correct_letter,
+
+
                 "_template": template,
+
+
                 "_objects": {
+
+
                     "descriptor": descriptor,
+
+
                     "correct_path": correct_path,
                     **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
                 }
@@ -607,6 +733,7 @@ class QuestionGenerator:
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[descriptor] += 1
+                type_usage[descriptor] += 1
 
         return questions
 
@@ -625,9 +752,14 @@ class QuestionGenerator:
         count = config["count"]
         template = config["template"]
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         for i in range(count):
-            # Sample first descriptor
+            # Sample first descriptor (exclude already used in this task type)
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor1 = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -636,9 +768,9 @@ class QuestionGenerator:
             if descriptor1 is None:
                 continue
 
-            # Sample second descriptor (different from first)
+            # Sample second descriptor (different from first and not used in type)
             descriptor2 = self.sampler.sample_any(
-                exclude={descriptor1},
+                exclude=used_in_type | {descriptor1},
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -669,17 +801,46 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
+            # Generate content-based ID
+
+
+            content_id = self._generate_uuid_id(task_type)
+
+
+
             question = {
-                "id": f"{task_type}_{i+1:03d}",
+
+
+                "id": content_id,
+
+
                 "category": "A",
+
+
                 "task_type": task_type,
+
+
                 "text": template.format(descriptor1=descriptor1, descriptor2=descriptor2),
+
+
                 "options": options,
+
+
                 "correct_answer": correct_letter,
+
+
                 "_template": template,
+
+
                 "_objects": {
+
+
                     "descriptor1": descriptor1,
+
+
                     "descriptor2": descriptor2,
+
+
                     "lca": lca,
                     **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
                 }
@@ -689,6 +850,8 @@ class QuestionGenerator:
                 questions.append(question)
                 self.descriptor_usage[descriptor1] += 1
                 self.descriptor_usage[descriptor2] += 1
+                type_usage[descriptor1] += 1
+                type_usage[descriptor2] += 1
 
         return questions
 
@@ -709,9 +872,14 @@ class QuestionGenerator:
         template = config["template"]
         candidate_count = config.get("candidate_count", 3)
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         for i in range(count):
             # Sample target
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             target = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -754,8 +922,11 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
+            # Generate UUID-based ID (E1)
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{i+1:03d}",
+                "id": content_id,
                 "category": "E",
                 "task_type": task_type,
                 "text": template.format(target=target, candidates=candidates_str),
@@ -773,6 +944,7 @@ class QuestionGenerator:
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[target] += 1
+                type_usage[target] += 1
 
         return questions
 
@@ -800,9 +972,14 @@ class QuestionGenerator:
 
         min_distance_diff = config.get("min_distance_diff", 1)
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         for i in range(count):
             # Sample target
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             target = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -837,8 +1014,11 @@ class QuestionGenerator:
 
             template = random.choice(templates)
 
+            # Generate UUID-based ID (E2)
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{i+1:03d}",
+                "id": content_id,
                 "category": "E",
                 "task_type": task_type,
                 "text": template.format(target=target, option1=option1, option2=option2),
@@ -857,6 +1037,7 @@ class QuestionGenerator:
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[target] += 1
+                type_usage[target] += 1
 
         return questions
 
@@ -879,6 +1060,9 @@ class QuestionGenerator:
         # Try more attempts to reach target count
         max_attempts = count * 20
         attempts = 0
+
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
 
         while len(questions) < count and attempts < max_attempts:
             attempts += 1
@@ -918,8 +1102,11 @@ class QuestionGenerator:
             options = {letter: cand for letter, cand in zip(letters, all_candidates)}
             correct_letter = [k for k, v in options.items() if v == odd_one][0]
 
+            # Generate UUID-based ID (E3)
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+                "id": content_id,
                 "category": "E",
                 "task_type": task_type,
                 "text": template.format(candidates=candidates_str),
@@ -937,6 +1124,7 @@ class QuestionGenerator:
             if self.validator.validate(question):
                 questions.append(question)
                 self.descriptor_usage[odd_one] += 1
+                type_usage[odd_one] += 1
 
         return questions
 
@@ -962,9 +1150,14 @@ class QuestionGenerator:
         pair_count = 4
         category_count = 2
 
+        # Track descriptors used in this task type
+        type_usage = self.descriptor_usage_by_type[task_type]
+
         # Generate single descriptor questions
         for i in range(single_desc_count):
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -981,8 +1174,11 @@ class QuestionGenerator:
                 descriptor, ancestors, children
             )
 
+            # Generate UUID-based ID (F - single descriptor)
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+                "id": content_id,
                 "category": "F",
                 "task_type": task_type,
                 "text": templates[0].format(descriptor=descriptor),  # Single descriptor template
@@ -999,10 +1195,13 @@ class QuestionGenerator:
 
             questions.append(question)
             self.descriptor_usage[descriptor] += 1
+            type_usage[descriptor] += 1
 
         # Generate descriptor pair questions
         for i in range(pair_count):
+            used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor1 = self.sampler.sample_any(
+                exclude=used_in_type,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -1012,7 +1211,7 @@ class QuestionGenerator:
                 continue
 
             descriptor2 = self.sampler.sample_any(
-                exclude={descriptor1},
+                exclude=used_in_type | {descriptor1},
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -1029,8 +1228,11 @@ class QuestionGenerator:
                 descriptor1, descriptor2, lca, distance
             )
 
+            # Generate UUID-based ID (F - descriptor pair)
+            content_id = self._generate_uuid_id(task_type)
+
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+                "id": content_id,
                 "category": "F",
                 "task_type": task_type,
                 "text": templates[2].format(descriptor1=descriptor1, descriptor2=descriptor2),
@@ -1049,11 +1251,15 @@ class QuestionGenerator:
             questions.append(question)
             self.descriptor_usage[descriptor1] += 1
             self.descriptor_usage[descriptor2] += 1
+            type_usage[descriptor1] += 1
+            type_usage[descriptor2] += 1
 
         # Generate category overview questions
         for i in range(category_count):
-            # Sample a root category
+            # Sample a root category (exclude those in tool graph to prevent leakage)
             root_categories = self.graph.get_root_categories()
+            if self.tool_graph_nodes:
+                root_categories = [r for r in root_categories if r not in self.tool_graph_nodes]
             if not root_categories:
                 continue
 
@@ -1062,9 +1268,12 @@ class QuestionGenerator:
 
             reference_answer = self._build_reference_answer_category(category, children)
 
+            # Generate UUID-based ID (F - category overview)
+            content_id = self._generate_uuid_id(task_type)
+
             # Use descriptor template but with category
             question = {
-                "id": f"{task_type}_{len(questions)+1:03d}",
+                "id": content_id,
                 "category": "F",
                 "task_type": task_type,
                 "text": templates[0].format(descriptor=category),  # Reuse single descriptor template

@@ -7,9 +7,32 @@ Classes:
     QuestionValidator: Validates questions meet quality criteria
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 
 from ..graph import CoffeeDescriptionGraph
+
+# Fields in _objects where values are specific descriptors that must NOT appear in the tool graph
+PROTECTED_FIELDS = {
+    'descriptor', 'descriptor1', 'descriptor2',
+    'correct_sibling',
+    'distractor1', 'distractor2', 'distractor3',
+    'target', 'option1', 'option2',
+    'closer', 'farther',
+    'odd_one',
+}
+
+# List-valued fields in _objects where each element must NOT appear in the tool graph
+PROTECTED_LIST_FIELDS = {
+    'similar_group', 'candidates', 'all_candidates',
+}
+
+# Fields in _objects that are structural/categorical and CAN appear in the tool graph
+STRUCTURAL_FIELDS = {
+    'parent', 'ancestor', 'lca', 'root', 'root_category',
+    'all_valid_roots', 'valid_roots_in_options', 'invalid_roots_in_options',
+    'is_ancestor', 'correct_path', 'correct_ranking',
+    'question_subtype', 'similar_parent',
+}
 
 
 class QuestionValidator:
@@ -21,12 +44,13 @@ class QuestionValidator:
     - Unambiguous (only one correct answer)
     - Non-trivial (distractors are plausible)
     - Well-formed (all required fields present)
+    - Leak-free (no question components appear in tool graph)
 
     Example:
-        >>> validator = QuestionValidator(graph)
+        >>> validator = QuestionValidator(graph, tool_graph_nodes={"chocolate", "vanilla"})
         >>>
         >>> question = {
-        ...     "text": "Which root category does 'chocolate' belong to?",
+        ...     "text": "Which root category does 'caramel' belong to?",
         ...     "options": {"A": "fruity", "B": "nutty/cocoa", "C": "floral", "D": "spices"},
         ...     "correct_answer": "B"
         ... }
@@ -35,14 +59,17 @@ class QuestionValidator:
         >>> print(is_valid)  # True
     """
 
-    def __init__(self, graph: CoffeeDescriptionGraph):
+    def __init__(self, graph: CoffeeDescriptionGraph, tool_graph_nodes: Optional[Set[str]] = None):
         """
         Initialize validator.
 
         Args:
             graph: CoffeeDescriptionGraph instance
+            tool_graph_nodes: Set of ALL node names in the tool graph (for leakage checking).
+                              If provided, questions with protected components in this set are rejected.
         """
         self.graph = graph
+        self.tool_graph_nodes = tool_graph_nodes or set()
 
     def validate(self, question: Dict[str, Any]) -> bool:
         """
@@ -83,6 +110,14 @@ class QuestionValidator:
 
         # Check no duplicate options
         if not self._check_no_duplicate_options(question):
+            return False
+
+        # Check no data leakage (components in tool graph)
+        if not self._check_no_leakage(question):
+            return False
+
+        # Check no ROOT:SYSTEM in any field (structural node, never valid in questions)
+        if not self._check_no_root_system(question):
             return False
 
         # Task-specific validation
@@ -154,6 +189,88 @@ class QuestionValidator:
         values = list(options.values())
 
         return len(values) == len(set(values))
+
+    def _check_no_leakage(self, question: Dict[str, Any]) -> bool:
+        """
+        Check that no protected question components appear in the tool graph.
+
+        Protected components (descriptors, siblings, distractors) must not be
+        in the tool graph, as that would allow a tool-augmented model to look
+        them up directly and solve the question mechanically.
+
+        Structural components (parent, ancestor, lca) are allowed in the tool
+        graph since they represent categorical information.
+        """
+        if not self.tool_graph_nodes:
+            return True  # No tool graph provided, skip check
+
+        objects = question.get("_objects", {})
+
+        # Check protected string fields
+        for field in PROTECTED_FIELDS:
+            value = objects.get(field)
+            if isinstance(value, str) and value in self.tool_graph_nodes:
+                return False
+
+        # Check protected list fields
+        for field in PROTECTED_LIST_FIELDS:
+            value = objects.get(field)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and item in self.tool_graph_nodes:
+                        return False
+
+        return True
+
+    def _check_no_root_system(self, question: Dict[str, Any]) -> bool:
+        """
+        Check that ROOT:SYSTEM does not appear in any field.
+
+        ROOT:SYSTEM is a structural node in the graph and should never be used
+        as a component in questions (descriptor, parent, ancestor, path, etc.).
+        This is a critical validation rule that applies to ALL fields.
+        """
+        objects = question.get("_objects", {})
+
+        # Check all string fields
+        for field, value in objects.items():
+            if isinstance(value, str):
+                if 'ROOT:SYSTEM' in value:
+                    return False
+            elif isinstance(value, list):
+                # Check all list items
+                for item in value:
+                    if isinstance(item, str) and 'ROOT:SYSTEM' in item:
+                        return False
+
+        return True
+
+    def get_leaked_fields(self, question: Dict[str, Any]) -> List[str]:
+        """
+        Get list of fields that leak into the tool graph.
+
+        Returns:
+            List of "field_name: value" strings for leaked components.
+        """
+        if not self.tool_graph_nodes:
+            return []
+
+        leaked = []
+        objects = question.get("_objects", {})
+
+        for field in PROTECTED_FIELDS:
+            value = objects.get(field)
+            if isinstance(value, str) and value in self.tool_graph_nodes:
+                leaked.append(f"{field}: {value}")
+
+        for field in PROTECTED_LIST_FIELDS:
+            value = objects.get(field)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and item in self.tool_graph_nodes:
+                        leaked.append(f"{field}[]: {item}")
+
+        return leaked
 
     def _validate_a1(self, question: Dict[str, Any]) -> bool:
         """
@@ -294,5 +411,10 @@ class QuestionValidator:
         if not self._check_no_duplicate_options(question):
             report["is_valid"] = False
             report["errors"].append("Duplicate option values")
+
+        if not self._check_no_leakage(question):
+            report["is_valid"] = False
+            leaked = self.get_leaked_fields(question)
+            report["errors"].append(f"Data leakage: {', '.join(leaked)}")
 
         return report

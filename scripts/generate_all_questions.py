@@ -51,13 +51,18 @@ def main():
         )
         print(f"✓ Loaded tool graph: {len(tool_data['descriptions'])} total nodes")
 
-        # Calculate exclusion list - ONLY exclude leaf nodes (prevent data leakage)
-        tool_leaf_nodes = set(tool_graph.get_leaf_nodes())
+        # Calculate exclusion list - exclude ALL tool graph nodes (prevent data leakage)
+        # Any node in the tool graph can be looked up by a tool-augmented model,
+        # so all of them must be excluded from question components.
         all_tool_nodes = set(tool_data['descriptions'])
+        # Remove ROOT nodes (structural, not actual flavors)
+        tool_nodes_for_exclusion = {n for n in all_tool_nodes if not n.startswith('ROOT:')}
+        tool_leaf_nodes = set(tool_graph.get_leaf_nodes())
         tool_non_leaf = all_tool_nodes - tool_leaf_nodes
 
-        print(f"  - Leaf nodes: {len(tool_leaf_nodes)} (will exclude)")
-        print(f"  - Non-leaf nodes: {len(tool_non_leaf)} (intermediate/roots, allowed)")
+        print(f"  - Leaf nodes: {len(tool_leaf_nodes)}")
+        print(f"  - Non-leaf nodes: {len(tool_non_leaf)} (intermediate/categories)")
+        print(f"  - Total tool nodes (excl ROOT): {len(tool_nodes_for_exclusion)} (all excluded)")
 
         # Add structural/non-flavor categories to exclusion
         print(f"\nExcluding non-flavor categories:")
@@ -88,7 +93,13 @@ def main():
             non_flavor_descriptors.add('baked')
             print(f"  - 'baked': 1 node")
 
-        # 3. Exclude 'ROOT:SYSTEM' node only (not its descendants!)
+        # 3. Exclude 'defected' root itself (its descendants are valid flavors,
+        #    but the root is a category that maps to 'other' in tool graph)
+        if 'defected' in system_graph.descriptions:
+            non_flavor_descriptors.add('defected')
+            print(f"  - 'defected': 1 node (root category, maps to 'other' in tool graph)")
+
+        # 4. Exclude 'ROOT:SYSTEM' node only (not its descendants!)
         if 'ROOT:SYSTEM' in system_graph.descriptions:
             non_flavor_descriptors.add('ROOT:SYSTEM')
             print(f"  - 'ROOT:SYSTEM': 1 node (structural root)")
@@ -97,28 +108,30 @@ def main():
 
         print(f"  Total non-flavor nodes: {len(non_flavor_descriptors)}")
 
-        # Combine exclusions: tool graph leafs + non-flavor categories
-        exclude_set = tool_leaf_nodes | non_flavor_descriptors
+        # Combine exclusions: all tool graph nodes + non-flavor categories
+        exclude_set = tool_nodes_for_exclusion | non_flavor_descriptors
         overlap = len(exclude_set & set(system_graph.descriptions))
         available = len(set(system_graph.descriptions) - exclude_set)
 
         print(f"\n✓ Total exclusions: {len(exclude_set)} nodes")
-        print(f"  - Tool graph leafs: {len(tool_leaf_nodes)}")
+        print(f"  - Tool graph nodes: {len(tool_nodes_for_exclusion)} (all non-ROOT)")
         print(f"  - Non-flavor categories: {len(non_flavor_descriptors)}")
         print(f"✓ Available: {available} unique flavor descriptors for questions")
-        print(f"✓ Design: Only actual flavor descriptors in questions")
+        print(f"✓ Design: No question component appears in tool graph")
     else:
         print(f"⚠ Tool graph not found, no exclusion applied")
         exclude_set = set()
+        tool_nodes_for_exclusion = set()
 
     print()
 
-    # Create generator with exclusion list
+    # Create generator with exclusion list and tool graph leakage checking
     print("Generating all questions with data leakage prevention...")
     generator = QuestionGenerator(
         system_graph,
         random_seed=42,
-        exclude_descriptors=exclude_set
+        exclude_descriptors=exclude_set,
+        tool_graph_nodes=tool_nodes_for_exclusion
     )
 
     # Generate all questions
@@ -211,10 +224,11 @@ def main():
     print(f"✓ Saved to: {output_path}")
     print()
     print("📝 Exclusion Strategy:")
-    print("   1. Tool graph LEAF nodes (prevent data leakage)")
+    print("   1. ALL tool graph nodes (prevent data leakage in descriptors, siblings, distractors)")
     print("   2. Non-flavor categories: 'taste', 'baked', 'ROOT:SYSTEM'")
-    print("   → Only actual FLAVOR descriptors appear as question subjects")
-    print("   → LLMs must reason about flavor relationships, not attributes")
+    print("   3. Validator checks ALL question components against tool graph")
+    print("   → No question component (descriptor, sibling, distractor) appears in tool graph")
+    print("   → LLMs must reason about flavor relationships, not look up answers")
     print()
 
     # Show some samples

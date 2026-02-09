@@ -298,6 +298,44 @@
             margin-top: 20px;
         }
 
+        /* Backup notification styles */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateX(400px);
+            transition: all 0.3s ease;
+            z-index: 2000;
+            max-width: 400px;
+        }
+
+        .notification.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .notification-success {
+            border-left: 4px solid #10b981;
+            color: #065f46;
+        }
+
+        .notification-warning {
+            border-left: 4px solid #f59e0b;
+            color: #92400e;
+        }
+
+        .notification-info {
+            border-left: 4px solid #3b82f6;
+            color: #1e40af;
+        }
+
         .loading {
             text-align: center;
             padding: 60px;
@@ -461,16 +499,43 @@
             console.log('Confirming question:', currentQuestion.id);
 
             try {
-                await fetch('/api/confirm', {
+                const response = await fetch('/api/confirm', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({question_id: currentQuestion.id})
                 });
 
+                const data = await response.json();
+
+                // Show backup notification
+                if (data.backup) {
+                    if (data.backup.created) {
+                        showNotification(`✓ Backup created: backup_${data.backup.version}.json`, 'success');
+                    } else if (data.backup.error) {
+                        showNotification(`⚠️ Backup failed: ${data.backup.error}`, 'warning');
+                    }
+                }
+
                 await loadCurrentQuestion();
             } finally {
                 isProcessing = false;
             }
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            // Fade in
+            setTimeout(() => notification.classList.add('show'), 10);
+
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
         }
 
         function openFlagModal() {

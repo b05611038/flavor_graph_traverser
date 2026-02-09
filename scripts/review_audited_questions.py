@@ -64,9 +64,12 @@ def get_stats():
 
 @app.route('/api/confirmed')
 def get_confirmed():
-    """Get all confirmed questions (with auto-reload)."""
+    """Get all confirmed questions (with auto-reload and task type filter)."""
     # Reload state from file to get latest changes
     auditor.reload_state()
+
+    # Get task type filter from query parameter
+    task_type_filter = request.args.get('task_type', None)
 
     confirmed_ids = auditor.get_confirmed_questions()
 
@@ -74,6 +77,10 @@ def get_confirmed():
     for qid in confirmed_ids:
         q = next((q for q in questions_data['questions'] if q['id'] == qid), None)
         if q:
+            # Apply task type filter if specified
+            if task_type_filter and not q['task_type'].startswith(task_type_filter):
+                continue
+
             display_q = format_question_for_display(q)
             display_q['id'] = q['id']
             display_q['task_type'] = q['task_type']
@@ -85,9 +92,12 @@ def get_confirmed():
 
 @app.route('/api/flagged')
 def get_flagged():
-    """Get all flagged questions (with auto-reload)."""
+    """Get all flagged questions (with auto-reload and task type filter)."""
     # Reload state from file to get latest changes
     auditor.reload_state()
+
+    # Get task type filter from query parameter
+    task_type_filter = request.args.get('task_type', None)
 
     flagged_ids = auditor.get_flagged_questions()
 
@@ -95,6 +105,10 @@ def get_flagged():
     for qid in flagged_ids:
         q = next((q for q in questions_data['questions'] if q['id'] == qid), None)
         if q:
+            # Apply task type filter if specified
+            if task_type_filter and not q['task_type'].startswith(task_type_filter):
+                continue
+
             display_q = format_question_for_display(q)
             display_q['id'] = q['id']
             display_q['task_type'] = q['task_type']

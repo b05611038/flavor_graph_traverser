@@ -24,6 +24,15 @@ from FlavorGraphTraverser.evaluation.question_auditor import (
     format_question_for_display
 )
 
+# Import backup manager for auto-backup
+try:
+    from scripts.backup_manager import create_incremental_backup
+except ImportError:
+    # Fallback if running from different directory
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from backup_manager import create_incremental_backup
+
 # Get project root for template directory
 project_root = Path(__file__).parent.parent
 template_dir = project_root / "templates"
@@ -110,14 +119,41 @@ def get_current_question():
 
 @app.route('/api/confirm', methods=['POST'])
 def confirm_question():
-    """Confirm current question."""
+    """Confirm current question and create incremental backup."""
     data = request.get_json()
     question_id = data.get('question_id')
     notes = data.get('notes', '')
 
+    # Confirm the question
     auditor.confirm_question(question_id, notes)
 
-    return jsonify({"success": True})
+    # Create incremental backup automatically
+    backup_info = None
+    try:
+        backup_path = create_incremental_backup()
+        if backup_path:
+            backup_version = int(backup_path.stem.split('_')[1])
+            backup_info = {
+                "created": True,
+                "version": backup_version,
+                "message": f"Created backup_{backup_version}.json"
+            }
+        else:
+            backup_info = {
+                "created": False,
+                "message": "Backup already exists with same confirmed count"
+            }
+    except Exception as e:
+        print(f"Warning: Failed to create backup: {e}")
+        backup_info = {
+            "created": False,
+            "error": str(e)
+        }
+
+    return jsonify({
+        "success": True,
+        "backup": backup_info
+    })
 
 
 @app.route('/api/flag', methods=['POST'])
