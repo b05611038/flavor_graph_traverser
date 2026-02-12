@@ -92,10 +92,13 @@ class AuditStateManager:
             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
             try:
                 data = json.load(f)
-                self.states = {
-                    qid: QuestionAuditState(**state_dict)
-                    for qid, state_dict in data.items()
-                }
+                self.states = {}
+                for qid, state_dict in data.items():
+                    # Remove question_id from state_dict if it exists (legacy data)
+                    state_dict = dict(state_dict)  # Make a copy
+                    state_dict.pop('question_id', None)
+                    # Use the key as the actual question_id
+                    self.states[qid] = QuestionAuditState(question_id=qid, **state_dict)
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
@@ -184,7 +187,10 @@ class AuditStateManager:
         return [qid for qid, state in self.states.items() if state.status == "flagged"]
 
     def get_pending_questions(self, all_question_ids: List[str]) -> List[str]:
-        """Get list of pending question IDs."""
+        """
+        Get list of pending question IDs only.
+        Flagged questions are considered rejected and excluded.
+        """
         return [qid for qid in all_question_ids if self.get_status(qid) == "pending"]
 
     def get_stats(self) -> Dict[str, int]:

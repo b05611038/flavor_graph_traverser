@@ -1,162 +1,57 @@
 #!/usr/bin/env python3
 """
-Reorder A2 questions to prioritize under-represented categories.
-
-Priority order:
-1. nutty/cocoa (rarest - only 2 descriptors)
-2. floral, spices (5 each)
-3. sour/fermented (8)
-4. defected (6)
-5. green/vegetable, roasted (13 each)
-6. fruity, sweet (most common - 21 each)
+Reorder A2 questions to prioritize non-ROOT:SYSTEM questions.
+ROOT:SYSTEM ancestor questions are often trivial (everything is under ROOT:SYSTEM).
 """
 
 import json
-import sys
-from pathlib import Path
+from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
-
-
-def get_root_categories(graph, descriptor):
-    """Get all root categories for a descriptor."""
-    all_parents = graph.parents_of_description(descriptor)
-    root_categories = set()
-    for parent in all_parents:
-        try:
-            root = graph.get_root_category(parent)
-            if root:
-                root_categories.add(root)
-        except:
-            pass
-    return sorted(list(root_categories))
-
-
-def main():
-    print("="*70)
-    print("Reorder A2 Questions by Category Priority")
-    print("="*70)
-    print()
-
-    # Load system graph
-    system_data = load_graph_data('data/graphs/system_graph.pkl')
-    system_graph = CoffeeDescriptionGraph(
-        system_data['descriptions'],
-        system_data['connections'],
-        root=system_data['root']
-    )
+def reorder_a2_questions():
+    """Reorder questions to put interesting A2 questions first."""
 
     # Load questions
-    with open('data/questions/all_questions_system.json', 'r') as f:
+    questions_file = "data/questions/all_questions_system.json"
+    print(f"Loading questions from: {questions_file}")
+
+    with open(questions_file) as f:
         data = json.load(f)
 
-    # Separate A2 from other questions
-    a2_questions = []
-    other_questions = []
+    questions = data['questions']
 
-    for q in data['questions']:
+    # Separate into categories
+    a2_root_system = []  # A2 with ROOT:SYSTEM ancestor - boring
+    a2_other = []  # A2 with interesting ancestors
+    non_a2 = []  # Everything else
+
+    for q in questions:
         if q['task_type'] == 'A2_ancestor_verification':
-            a2_questions.append(q)
-        else:
-            other_questions.append(q)
-
-    print(f"Found {len(a2_questions)} A2 questions to reorder")
-    print()
-
-    # Define priority scores (lower = higher priority)
-    priority_scores = {
-        'nutty/cocoa': 1,      # Rarest
-        'floral': 2,
-        'spices': 2,
-        'defected': 3,
-        'sour/fermented': 4,
-        'green/vegetable': 5,
-        'roasted': 5,
-        'fruity': 6,           # Most common
-        'sweet': 6
-    }
-
-    # Score each A2 question
-    scored_questions = []
-
-    for q in a2_questions:
-        desc = q['_objects']['descriptor']
-
-        try:
-            roots = get_root_categories(system_graph, desc)
-
-            # Use minimum priority (highest priority category)
-            if roots:
-                min_priority = min(priority_scores.get(r, 10) for r in roots)
+            ancestor = q['_objects'].get('ancestor', '')
+            if ancestor == 'ROOT:SYSTEM':
+                a2_root_system.append(q)
             else:
-                min_priority = 10
-
-            scored_questions.append((min_priority, q))
-        except:
-            scored_questions.append((10, q))
-
-    # Sort by priority (lower first), then by ID for stability
-    scored_questions.sort(key=lambda x: (x[0], x[1]['id']))
-
-    # Extract sorted questions
-    sorted_a2 = [q for _, q in scored_questions]
-
-    print("Priority distribution after reordering:")
-    from collections import Counter
-    priority_counts = Counter(score for score, _ in scored_questions)
-    for priority in sorted(priority_counts.keys()):
-        count = priority_counts[priority]
-        if priority == 1:
-            label = "nutty/cocoa"
-        elif priority == 2:
-            label = "floral, spices"
-        elif priority == 3:
-            label = "defected"
-        elif priority == 4:
-            label = "sour/fermented"
-        elif priority == 5:
-            label = "green/vegetable, roasted"
-        elif priority == 6:
-            label = "fruity, sweet"
+                a2_other.append(q)
         else:
-            label = "unknown"
-        print(f"  Priority {priority} ({label}): {count} questions")
+            non_a2.append(q)
 
-    print()
+    # New order: Interesting A2 first, ROOT:SYSTEM A2 at back, everything else after
+    reordered = a2_other + non_a2 + a2_root_system
 
-    # Show first 10 questions after reordering
-    print("First 10 questions after reordering:")
-    for i, q in enumerate(sorted_a2[:10], 1):
-        desc = q['_objects']['descriptor']
-        try:
-            roots = get_root_categories(system_graph, desc)
-            print(f"  {i}. {desc} ({' + '.join(roots)})")
-        except:
-            print(f"  {i}. {desc}")
+    print(f"\nReordered:")
+    print(f"  A2 (non-ROOT:SYSTEM): {len(a2_other)} - Priority")
+    print(f"  Non-A2 questions: {len(non_a2)}")
+    print(f"  A2 (ROOT:SYSTEM): {len(a2_root_system)} - Deprioritized")
 
-    print()
-
-    # Reconstruct full question list
-    # Keep other question types in their original positions
-    all_questions = other_questions + sorted_a2
-
-    # Update metadata
-    data['questions'] = all_questions
+    # Update data
+    data['questions'] = reordered
+    data['metadata']['last_modified'] = datetime.now().isoformat()
 
     # Save
-    output_file = 'data/questions/all_questions_system.json'
-    print(f"Saving reordered questions to: {output_file}")
+    with open(questions_file, 'w') as f:
+        json.dump(data, f, indent=2)
 
-    with open(output_file, 'w') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-    print("✓ Done!")
-    print()
-    print("Rare categories (nutty/cocoa, floral, spices) now appear first")
-    print("in the audit queue.")
+    print(f"\n✓ Saved reordered questions to: {questions_file}")
 
 
 if __name__ == "__main__":
-    main()
+    reorder_a2_questions()
