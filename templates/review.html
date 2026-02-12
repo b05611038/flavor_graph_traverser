@@ -505,8 +505,13 @@
             currentTab = tab;
 
             // Update tab buttons
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
+            document.querySelectorAll('.tab').forEach(t => {
+                t.classList.remove('active');
+                // Add data-tab attribute for easier tracking
+                if (t.textContent.toLowerCase().includes(tab)) {
+                    t.classList.add('active');
+                }
+            });
 
             // Update content
             document.querySelectorAll('.question-list').forEach(list => list.classList.remove('active'));
@@ -522,10 +527,10 @@
 
         function applyFilters() {
             // Reload data with task type filter from server
-            const activeTab = document.querySelector('.tab.active').dataset.tab;
-            if (activeTab === 'confirmed') {
+            // Use currentTab variable instead of trying to read from DOM
+            if (currentTab === 'confirmed') {
                 loadConfirmed();
-            } else if (activeTab === 'flagged') {
+            } else if (currentTab === 'flagged') {
                 loadFlagged();
             }
         }
