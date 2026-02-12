@@ -293,20 +293,22 @@ class QuestionGenerator:
         all_roots = self.graph.get_root_categories()
 
         # Filter out non-flavor root categories
-        non_flavor_roots = {'taste', 'defected', 'baked', 'ROOT:SYSTEM'}
+        # Note: 'defected' is kept but will display as 'other' in options
+        non_flavor_roots = {'taste', 'baked', 'ROOT:SYSTEM'}
         all_roots = [r for r in all_roots if r not in non_flavor_roots]
 
         # Track descriptors used in this task type to prevent duplicates
         type_usage = self.descriptor_usage_by_type[task_type]
 
         for i in range(count):
-            # Sample leaf descriptor (exclude already used in this task type)
+            # Sample leaf descriptor (exclude already used in this task type ONLY)
+            # Note: Descriptors can be reused across different task types
             used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_leaf(
                 exclude=used_in_type,
-                exclude_overused=True,
-                max_usage=self.max_reuse,
-                usage_tracker=self.descriptor_usage
+                exclude_overused=False,  # Allow reuse across task types
+                max_usage=None,  # No global limit
+                usage_tracker=None  # Don't track global usage
             )
 
             if descriptor is None:
@@ -349,15 +351,21 @@ class QuestionGenerator:
             letters = ['A', 'B', 'C', 'D', 'E', 'F'][:num_options]
             options = {letter: option for letter, option in zip(letters, all_options)}
 
-            # Find which letters are correct (valid roots)
+            # Map 'defected' to 'other' for display (graph uses 'defected' internally)
+            display_options = {
+                letter: ('other' if value == 'defected' else value)
+                for letter, value in options.items()
+            }
+
+            # Find which letters are correct (valid roots) - use original options for comparison
             correct_letters = [letter for letter, root in options.items() if root in valid_in_options]
 
             # Format answer as list (can be empty, single, or multiple)
             correct_answer = sorted(correct_letters)  # Sort for consistency
 
-            # Format question text with conditional footnote for 'other' (check for 'defected' which will be mapped to 'other')
+            # Format question text with conditional footnote for 'other'
             question_text = template.format(descriptor=descriptor)
-            if 'defected' in options.values():
+            if 'other' in display_options.values():
                 question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
             # Create question with UUID-based ID
@@ -374,7 +382,7 @@ class QuestionGenerator:
 
                 "text": question_text,
 
-                "options": options,
+                "options": display_options,  # Use display options with 'other' instead of 'defected'
 
                 "correct_answer": correct_answer,  # List of correct letters
                 "answer_format": "multi_label",  # Indicates multiple selections allowed
@@ -652,13 +660,14 @@ class QuestionGenerator:
         type_usage = self.descriptor_usage_by_type[task_type]
 
         for i in range(count):
-            # Sample leaf descriptor (exclude already used in this task type)
+            # Sample leaf descriptor (exclude already used in this task type ONLY)
+            # Note: Descriptors can be reused across different task types
             used_in_type = {d for d, c in type_usage.items() if c > 0}
             descriptor = self.sampler.sample_leaf(
                 exclude=used_in_type,
-                exclude_overused=True,
-                max_usage=self.max_reuse,
-                usage_tracker=self.descriptor_usage
+                exclude_overused=False,  # Allow reuse across task types
+                max_usage=None,  # No global limit
+                usage_tracker=None  # Don't track global usage
             )
 
             if descriptor is None:

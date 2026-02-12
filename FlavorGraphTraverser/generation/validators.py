@@ -120,6 +120,10 @@ class QuestionValidator:
         if not self._check_no_root_system(question):
             return False
 
+        # Check no text overlap (pattern matching prevention)
+        if not self._check_no_text_overlap(question):
+            return False
+
         # Task-specific validation
         task_type = question.get("task_type", "")
         if task_type.startswith("A1"):
@@ -242,6 +246,66 @@ class QuestionValidator:
                 for item in value:
                     if isinstance(item, str) and 'ROOT:SYSTEM' in item:
                         return False
+
+        return True
+
+    def _check_no_text_overlap(self, question: Dict[str, Any]) -> bool:
+        """
+        Check that the descriptor doesn't have significant word overlap with options.
+
+        This prevents trivial pattern matching questions like:
+        - "citrus" with option "orange fruit" (both contain "citrus")
+        - "peanut butter" as descriptor with parent "peanut"
+        - "chocolate" with option containing "chocolate"
+
+        NOTE: Skipped for A4 (path reconstruction) questions where the descriptor
+        MUST appear in the path options.
+
+        Returns:
+            True if no problematic overlap, False otherwise
+        """
+        import re
+
+        # Skip check for A4 questions (descriptor must appear in path)
+        task_type = question.get("task_type", "")
+        if task_type == "A4_path_reconstruction":
+            return True
+
+        objects = question.get("_objects", {})
+        descriptor = objects.get("descriptor", "")
+
+        if not descriptor:
+            return True
+
+        # Normalize descriptor to words
+        desc_words = set(re.findall(r'\b\w+\b', descriptor.lower()))
+
+        # Remove common stop words that don't indicate pattern matching
+        stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'}
+        desc_words = desc_words - stop_words
+
+        if not desc_words:
+            return True
+
+        # Check descriptor vs options (from question options dict)
+        options = question.get("options", {})
+        for option_text in options.values():
+            option_words = set(re.findall(r'\b\w+\b', option_text.lower()))
+            option_words = option_words - stop_words
+
+            # If there's any meaningful word overlap, it's pattern matching
+            overlap = desc_words & option_words
+            if overlap:
+                return False
+
+        # Check descriptor vs parent (catches nutty/cocoa issues)
+        parent = objects.get("parent", "")
+        if parent:
+            parent_words = set(re.findall(r'\b\w+\b', parent.lower()))
+            parent_words = parent_words - stop_words
+            overlap = desc_words & parent_words
+            if overlap:
+                return False
 
         return True
 
