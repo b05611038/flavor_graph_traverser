@@ -79,9 +79,21 @@ def audit_page():
 @app.route('/api/stats')
 def get_stats():
     """Get audit statistics."""
-    stats = auditor.get_stats()
-    stats['total_questions'] = len(all_questions)
-    stats['pending'] = stats['total_questions'] - stats['total_reviewed']
+    # Get IDs from current questions file
+    all_ids = [q.get("id") for q in all_questions]
+
+    # Filter stats to only questions in current file
+    confirmed_in_file = [qid for qid in all_ids if auditor.get_status(qid) == "confirmed"]
+    flagged_in_file = [qid for qid in all_ids if auditor.get_status(qid) == "flagged"]
+    pending_in_file = auditor.get_pending_questions(all_ids)
+
+    stats = {
+        'confirmed': len(confirmed_in_file),
+        'flagged': len(flagged_in_file),
+        'pending': len(pending_in_file),
+        'total_questions': len(all_questions),
+        'total_reviewed': len(confirmed_in_file) + len(flagged_in_file)
+    }
     stats['progress_percent'] = int((stats['confirmed'] / stats['total_questions']) * 100) if stats['total_questions'] > 0 else 0
     return jsonify(stats)
 
