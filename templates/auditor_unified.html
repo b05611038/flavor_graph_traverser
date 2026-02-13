@@ -493,6 +493,20 @@
                     <span class="stat-label">Pending</span>
                 </div>
             </div>
+            <div class="stats" style="margin-top: 10px; font-size: 12px; opacity: 0.9;">
+                <div class="stat-item">
+                    <span class="stat-value" id="cumulative-confirmed">0</span>
+                    <span class="stat-label">Total Confirmed</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="cumulative-flagged">0</span>
+                    <span class="stat-label">Total Flagged</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="cumulative-reviewed">0</span>
+                    <span class="stat-label">Total Reviewed</span>
+                </div>
+            </div>
             <div class="progress-bar">
                 <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
             </div>
@@ -574,10 +588,16 @@
             const response = await fetch('/api/stats');
             const stats = await response.json();
 
+            // Current file stats
             document.getElementById('confirmed-count').textContent = stats.confirmed;
             document.getElementById('flagged-count').textContent = stats.flagged;
             document.getElementById('pending-count').textContent = stats.pending;
             document.getElementById('progress-fill').style.width = stats.progress_percent + '%';
+
+            // Cumulative stats (all question types)
+            document.getElementById('cumulative-confirmed').textContent = stats.cumulative_confirmed || 0;
+            document.getElementById('cumulative-flagged').textContent = stats.cumulative_flagged || 0;
+            document.getElementById('cumulative-reviewed').textContent = stats.cumulative_reviewed || 0;
         }
 
         async function loadNextQuestion() {

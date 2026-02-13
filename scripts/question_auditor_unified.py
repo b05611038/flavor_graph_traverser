@@ -87,14 +87,27 @@ def get_stats():
     flagged_in_file = [qid for qid in all_ids if auditor.get_status(qid) == "flagged"]
     pending_in_file = auditor.get_pending_questions(all_ids)
 
+    # Get cumulative stats across ALL question types (from audit state)
+    # Access states directly from auditor
+    cumulative_confirmed = sum(1 for s in auditor.states.values() if s.status == 'confirmed')
+    cumulative_flagged = sum(1 for s in auditor.states.values() if s.status == 'flagged')
+    cumulative_total = len(auditor.states)
+
     stats = {
+        # Current file stats
         'confirmed': len(confirmed_in_file),
         'flagged': len(flagged_in_file),
         'pending': len(pending_in_file),
         'total_questions': len(all_questions),
-        'total_reviewed': len(confirmed_in_file) + len(flagged_in_file)
+        'total_reviewed': len(confirmed_in_file) + len(flagged_in_file),
+        'progress_percent': int((len(confirmed_in_file) / len(all_questions)) * 100) if len(all_questions) > 0 else 0,
+
+        # Cumulative stats (all question types)
+        'cumulative_confirmed': cumulative_confirmed,
+        'cumulative_flagged': cumulative_flagged,
+        'cumulative_total': cumulative_total,
+        'cumulative_reviewed': cumulative_confirmed + cumulative_flagged
     }
-    stats['progress_percent'] = int((stats['confirmed'] / stats['total_questions']) * 100) if stats['total_questions'] > 0 else 0
     return jsonify(stats)
 
 
