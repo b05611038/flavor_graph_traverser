@@ -280,11 +280,19 @@ def generate_multiselect_question(candidate_paths, paths_by_root, intermediate_n
     # Sort correct answers for consistency
     correct_letters.sort()
 
+    # Format question text with conditional footnote for 'other'
+    question_text = 'Select ALL hierarchies that are fully correct (select all that apply, or none if all are incorrect):'
+
+    # Check if any path contains 'other'
+    has_other = any('other' in path_str for path_str in options.values())
+    if has_other:
+        question_text += "\n\n*'other' includes non-standard or less common flavor categories"
+
     question = {
         'id': f"A4_multiselect_{random.randint(10000000, 99999999):08x}",
         'category': 'A',
         'task_type': 'A4_path_reconstruction_multiselect',
-        'text': 'Select ALL hierarchies that are fully correct (select all that apply, or none if all are incorrect):',
+        'text': question_text,
         'options': options,
         'correct_answer': correct_letters,  # List of letters
         '_template': 'Select ALL hierarchies that are fully correct:',
