@@ -25,12 +25,7 @@ from FlavorGraphTraverser.evaluation.question_auditor import (
     format_question_for_display
 )
 
-# Import backup manager for auto-backup
-try:
-    from scripts.backup_manager import create_incremental_backup
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).parent))
-    from backup_manager import create_incremental_backup
+from FlavorGraphTraverser.backup import backup_before_write
 
 # Get project root for template directory
 template_dir = project_root / "templates"
@@ -43,6 +38,18 @@ all_questions = []
 questions_file = None
 skipped_questions = set()  # Track skipped questions in current session
 question_history = []  # Track question navigation history for "Previous" button
+
+# Path to the master questions file — single source of truth for valid question IDs
+MASTER_QUESTIONS_FILE = project_root / "data" / "questions" / "all_questions_system.json"
+
+def get_valid_question_ids():
+    """Return the set of question IDs that have actual data in the master file."""
+    try:
+        with open(MASTER_QUESTIONS_FILE) as f:
+            data = json.load(f)
+        return {q['id'] for q in data.get('questions', [])}
+    except Exception:
+        return set()
 
 
 def load_questions(file_path: str):
@@ -87,11 +94,17 @@ def get_stats():
     flagged_in_file = [qid for qid in all_ids if auditor.get_status(qid) == "flagged"]
     pending_in_file = auditor.get_pending_questions(all_ids)
 
-    # Get cumulative stats across ALL question types (from audit state)
-    # Access states directly from auditor
-    cumulative_confirmed = sum(1 for s in auditor.states.values() if s.status == 'confirmed')
-    cumulative_flagged = sum(1 for s in auditor.states.values() if s.status == 'flagged')
-    cumulative_total = len(auditor.states)
+    # Get cumulative stats — only count IDs that exist in the master questions file
+    valid_ids = get_valid_question_ids()
+    cumulative_confirmed = sum(
+        1 for qid, s in auditor.states.items()
+        if s.status == 'confirmed' and qid in valid_ids
+    )
+    cumulative_flagged = sum(
+        1 for qid, s in auditor.states.items()
+        if s.status == 'flagged' and qid in valid_ids
+    )
+    cumulative_total = sum(1 for qid in auditor.states if qid in valid_ids)
 
     stats = {
         # Current file stats
@@ -458,6 +471,7 @@ def add_questions_api():
             else:
                 file_data["metadata"]["by_task_type"][task_type] = 1
 
+        backup_before_write(questions_file)
         with open(questions_file, 'w') as f:
             json.dump(file_data, f, indent=2)
 

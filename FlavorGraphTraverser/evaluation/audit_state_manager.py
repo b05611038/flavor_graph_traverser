@@ -13,6 +13,9 @@ from typing import Dict, Optional, List
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import shutil
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from FlavorGraphTraverser.backup import backup_before_write
 
 
 # Canonical state file location
@@ -110,10 +113,8 @@ class AuditStateManager:
                 "This interface is read-only to prevent conflicts."
             )
 
-        # Create backup
-        if self.state_file.exists():
-            backup_file = self.state_file.with_suffix('.json.backup')
-            shutil.copy2(self.state_file, backup_file)
+        # Create timestamped backup before overwriting
+        backup_before_write(self.state_file)
 
         # Atomic write: write to temp file first
         temp_file = self.state_file.with_suffix('.json.tmp')
