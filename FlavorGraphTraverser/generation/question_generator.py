@@ -92,7 +92,8 @@ class QuestionGenerator:
         templates_path: Optional[str] = None,
         random_seed: Optional[int] = None,
         exclude_descriptors: Optional[set] = None,
-        tool_graph_nodes: Optional[set] = None
+        tool_graph_nodes: Optional[set] = None,
+        existing_questions: Optional[List[Dict]] = None,
     ):
         """
         Initialize question generator.
@@ -105,10 +106,28 @@ class QuestionGenerator:
             tool_graph_nodes: Set of ALL node names in the tool graph. Used by the validator to reject
                               questions where any component (descriptor, sibling, distractor) appears
                               in the tool graph.
+            existing_questions: All previously generated questions (confirmed, flagged, AND pending).
+                                Used to prevent regenerating duplicate targets/pairs across runs.
         """
         self.graph = graph
         self.exclude_descriptors = exclude_descriptors or set()
         self.tool_graph_nodes = tool_graph_nodes or set()
+
+        # Build used-descriptor sets from ALL existing questions (confirmed + flagged + pending)
+        # to prevent repetition regardless of audit status.
+        self._used_targets: set = set()       # targets already used in E1/E2/E3/F
+        self._used_e3_parents: set = set()    # similar_parent already used in E3
+        for q in (existing_questions or []):
+            obj = q.get('_objects', {})
+            tt = q.get('task_type', '')
+            if tt in ('E1_similarity_ranking', 'E2_pairwise_comparison', 'F_flavor_description'):
+                t = obj.get('target', '')
+                if t:
+                    self._used_targets.add(t)
+            elif tt == 'E3_odd_one_out':
+                p = obj.get('similar_parent', '')
+                if p:
+                    self._used_e3_parents.add(p)
 
         # Load templates
         if templates_path is None:
@@ -885,10 +904,10 @@ class QuestionGenerator:
         type_usage = self.descriptor_usage_by_type[task_type]
 
         for i in range(count):
-            # Sample target
+            # Sample target — exclude targets already used in any existing question
             used_in_type = {d for d, c in type_usage.items() if c > 0}
             target = self.sampler.sample_any(
-                exclude=used_in_type,
+                exclude=used_in_type | self._used_targets,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -909,6 +928,10 @@ class QuestionGenerator:
 
             # Sort by distance (ascending = most similar first)
             candidates_sorted = [c for c, d in sorted(candidates_with_distances, key=lambda x: x[1])]
+
+            # Map 'defected' -> 'other' for display
+            candidates_sorted = [('other' if c == 'defected' else c) for c in candidates_sorted]
+            target_display = 'other' if target == 'defected' else target
 
             # Build correct ranking string
             correct_ranking = " > ".join(candidates_sorted)
@@ -931,6 +954,12 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
+            # Add footnote if 'other' appears anywhere
+            question_text = template.format(target=target_display, candidates=candidates_str)
+            has_other = 'other' in candidates_sorted or target_display == 'other'
+            if has_other:
+                question_text += "\n\n*'other' includes non-standard or less common flavor categories"
+
             # Generate UUID-based ID (E1)
             content_id = self._generate_uuid_id(task_type)
 
@@ -938,7 +967,7 @@ class QuestionGenerator:
                 "id": content_id,
                 "category": "E",
                 "task_type": task_type,
-                "text": template.format(target=target, candidates=candidates_str),
+                "text": question_text,
                 "options": options,
                 "correct_answer": correct_letter,
                 "_template": template,
@@ -954,6 +983,7 @@ class QuestionGenerator:
                 questions.append(question)
                 self.descriptor_usage[target] += 1
                 type_usage[target] += 1
+                self._used_targets.add(target)
 
         return questions
 
@@ -985,10 +1015,10 @@ class QuestionGenerator:
         type_usage = self.descriptor_usage_by_type[task_type]
 
         for i in range(count):
-            # Sample target
+            # Sample target — exclude targets already used in any existing question
             used_in_type = {d for d, c in type_usage.items() if c > 0}
             target = self.sampler.sample_any(
-                exclude=used_in_type,
+                exclude=used_in_type | self._used_targets,
                 exclude_overused=True,
                 max_usage=self.max_reuse,
                 usage_tracker=self.descriptor_usage
@@ -1013,15 +1043,21 @@ class QuestionGenerator:
             closer = options_sorted[0][0]
             farther = options_sorted[1][0]
 
-            # Randomly assign to option1/option2
-            if random.random() < 0.5:
-                option1, option2 = closer, farther
-                correct_answer = "A"
-            else:
-                option1, option2 = farther, closer
-                correct_answer = "B"
+            # Map 'defected' -> 'other' for display
+            target_display = 'other' if target == 'defected' else target
+            option1_raw = closer if random.random() < 0.5 else farther
+            option2_raw = farther if option1_raw == closer else closer
+            correct_answer = "A" if option1_raw == closer else "B"
+            option1 = 'other' if option1_raw == 'defected' else option1_raw
+            option2 = 'other' if option2_raw == 'defected' else option2_raw
+            closer_display = 'other' if closer == 'defected' else closer
 
             template = random.choice(templates)
+
+            # Add footnote if 'other' appears anywhere
+            question_text = template.format(target=target_display, option1=option1, option2=option2)
+            if 'other' in (target_display, option1, option2):
+                question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
             # Generate UUID-based ID (E2)
             content_id = self._generate_uuid_id(task_type)
@@ -1030,14 +1066,14 @@ class QuestionGenerator:
                 "id": content_id,
                 "category": "E",
                 "task_type": task_type,
-                "text": template.format(target=target, option1=option1, option2=option2),
+                "text": question_text,
                 "options": {"A": option1, "B": option2},
                 "correct_answer": correct_answer,
                 "_template": template,
                 "_objects": {
                     "target": target,
-                    "option1": option1,
-                    "option2": option2,
+                    "option1": option1_raw,
+                    "option2": option2_raw,
                     "closer": closer,
                     "farther": farther
                 }
@@ -1047,6 +1083,7 @@ class QuestionGenerator:
                 questions.append(question)
                 self.descriptor_usage[target] += 1
                 type_usage[target] += 1
+                self._used_targets.add(target)
 
         return questions
 
@@ -1076,9 +1113,12 @@ class QuestionGenerator:
         while len(questions) < count and attempts < max_attempts:
             attempts += 1
 
-            # Sample a parent with at least 3 children
+            # Sample a parent with at least 3 children — skip already-used parents
             parent = self.sampler.sample_middle()
             if parent is None:
+                continue
+
+            if parent in self._used_e3_parents:
                 continue
 
             children = self.graph.get_children(parent)
@@ -1099,17 +1139,26 @@ class QuestionGenerator:
             if odd_one is None:
                 continue
 
+            # Map 'defected' -> 'other' for display
+            similar_group_display = ['other' if c == 'defected' else c for c in similar_group]
+            odd_one_display = 'other' if odd_one == 'defected' else odd_one
+
             # Combine and shuffle
-            all_candidates = similar_group + [odd_one]
-            random.shuffle(all_candidates)
+            all_candidates_display = similar_group_display + [odd_one_display]
+            random.shuffle(all_candidates_display)
 
             # Build candidate list string
-            candidates_str = ", ".join(all_candidates)
+            candidates_str = ", ".join(all_candidates_display)
 
             # Find which letter corresponds to odd one
             letters = ['A', 'B', 'C', 'D']
-            options = {letter: cand for letter, cand in zip(letters, all_candidates)}
-            correct_letter = [k for k, v in options.items() if v == odd_one][0]
+            options = {letter: cand for letter, cand in zip(letters, all_candidates_display)}
+            correct_letter = [k for k, v in options.items() if v == odd_one_display][0]
+
+            # Add footnote if 'other' appears
+            question_text = template.format(candidates=candidates_str)
+            if 'other' in all_candidates_display:
+                question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
             # Generate UUID-based ID (E3)
             content_id = self._generate_uuid_id(task_type)
@@ -1118,7 +1167,7 @@ class QuestionGenerator:
                 "id": content_id,
                 "category": "E",
                 "task_type": task_type,
-                "text": template.format(candidates=candidates_str),
+                "text": question_text,
                 "options": options,
                 "correct_answer": correct_letter,
                 "_template": template,
@@ -1126,7 +1175,7 @@ class QuestionGenerator:
                     "similar_group": similar_group,
                     "similar_parent": parent,
                     "odd_one": odd_one,
-                    "all_candidates": all_candidates
+                    "all_candidates": similar_group + [odd_one]
                 }
             }
 
@@ -1134,6 +1183,7 @@ class QuestionGenerator:
                 questions.append(question)
                 self.descriptor_usage[odd_one] += 1
                 type_usage[odd_one] += 1
+                self._used_e3_parents.add(parent)
 
         return questions
 

@@ -6,6 +6,7 @@ Generates the full set of ~275 questions across all task types.
 """
 
 import sys
+import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -125,13 +126,24 @@ def main():
 
     print()
 
+    # Load existing questions (all statuses) to prevent repetition
+    existing_questions = []
+    master_file = Path("data/questions/all_questions_system.json")
+    if master_file.exists():
+        with open(master_file) as f:
+            existing_data = json.load(f)
+        existing_questions = existing_data.get('questions', [])
+        print(f"Loaded {len(existing_questions)} existing questions for repetition prevention")
+    print()
+
     # Create generator with exclusion list and tool graph leakage checking
     print("Generating all questions with data leakage prevention...")
     generator = QuestionGenerator(
         system_graph,
         random_seed=42,
         exclude_descriptors=exclude_set,
-        tool_graph_nodes=tool_nodes_for_exclusion
+        tool_graph_nodes=tool_nodes_for_exclusion,
+        existing_questions=existing_questions,
     )
 
     # Generate all questions
@@ -161,31 +173,7 @@ def main():
     questions = unique_questions
     print(f"✓ Final count: {len(questions)} questions")
 
-    # Map "defected" → "other" for coffee flavor wheel display
-    print("Mapping 'defected' → 'other' for display...")
-
-    def map_defected_to_other(obj):
-        """Recursively map 'defected' → 'other' in any data structure."""
-        if isinstance(obj, str):
-            return obj.replace('defected', 'other')
-        elif isinstance(obj, list):
-            return [map_defected_to_other(item) for item in obj]
-        elif isinstance(obj, dict):
-            return {k: map_defected_to_other(v) for k, v in obj.items()}
-        else:
-            return obj
-
-    for q in questions:
-        # Map in all fields recursively
-        q['text'] = map_defected_to_other(q.get('text', ''))
-        if 'options' in q:
-            q['options'] = map_defected_to_other(q['options'])
-        if 'reference_answer' in q:
-            q['reference_answer'] = map_defected_to_other(q['reference_answer'])
-        if '_objects' in q:
-            q['_objects'] = map_defected_to_other(q['_objects'])
-
-    print("✓ Display mapping applied")
+    print("✓ defected→other mapping and footnote applied inline during generation")
     print()
 
     # Show breakdown by category
