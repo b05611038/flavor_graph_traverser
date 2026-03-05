@@ -206,10 +206,28 @@ def main():
     print(f"Total: {len(questions)} questions")
     print()
 
-    # Save
-    output_path = "data/questions/all_questions_system.json"
-    generator.save_questions(questions, output_path)
-    print(f"✓ Saved to: {output_path}")
+    # Append new questions to master file (never overwrite existing questions)
+    output_path = Path("data/questions/all_questions_system.json")
+    from FlavorGraphTraverser.backup import backup_before_write
+
+    if output_path.exists() and existing_questions:
+        # Load existing master and append only truly new IDs
+        with open(output_path) as f:
+            master_data = json.load(f)
+        existing_ids = {q['id'] for q in master_data['questions']}
+        new_only = [q for q in questions if q['id'] not in existing_ids]
+        master_data['questions'].extend(new_only)
+        master_data['metadata']['total_questions'] = len(master_data['questions'])
+        master_data['metadata']['last_modified'] = __import__('datetime').datetime.now().isoformat()
+        backup_before_write(output_path)
+        with open(output_path, 'w') as f:
+            json.dump(master_data, f, indent=2)
+        print(f"✓ Appended {len(new_only)} new questions to: {output_path}")
+        print(f"  (skipped {len(questions) - len(new_only)} already-existing IDs)")
+        questions = new_only  # show stats for new questions only
+    else:
+        generator.save_questions(questions, str(output_path))
+        print(f"✓ Saved to: {output_path}")
     print()
     print("📝 Exclusion Strategy:")
     print("   1. ALL tool graph nodes (prevent data leakage in descriptors, siblings, distractors)")

@@ -272,17 +272,44 @@ class QuestionValidator:
             return True
 
         objects = question.get("_objects", {})
+        task_type = question.get("task_type", "")
+
+        stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'}
+
+        def words(s):
+            return set(re.findall(r'\b\w+\b', s.lower())) - stop_words
+
+        # For E1/E2: reject only if the CORRECT (closest) answer has text overlap
+        # with the target — that makes the answer obvious by name matching.
+        # Distractors sharing words with the target are fine (or even useful as traps).
+        if task_type == 'E1_similarity_ranking':
+            target = objects.get("target", "")
+            candidates = objects.get("candidates", [])
+            # candidates are sorted closest-first; index 0 is the correct answer
+            if target and candidates:
+                closest = candidates[0]
+                if words(target) & words(closest):
+                    return False
+            return True
+
+        if task_type == 'E2_pairwise_comparison':
+            target = objects.get("target", "")
+            closer = objects.get("closer", "")
+            if target and closer:
+                if words(target) & words(closer):
+                    return False
+            return True
+
+        # For E3: check odd_one and similar_group members don't share words
+        # (no additional overlap check needed beyond what A3 already does)
+
         descriptor = objects.get("descriptor", "")
 
         if not descriptor:
             return True
 
         # Normalize descriptor to words
-        desc_words = set(re.findall(r'\b\w+\b', descriptor.lower()))
-
-        # Remove common stop words that don't indicate pattern matching
-        stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'}
-        desc_words = desc_words - stop_words
+        desc_words = words(descriptor)
 
         if not desc_words:
             return True
@@ -290,21 +317,15 @@ class QuestionValidator:
         # Check descriptor vs options (from question options dict)
         options = question.get("options", {})
         for option_text in options.values():
-            option_words = set(re.findall(r'\b\w+\b', option_text.lower()))
-            option_words = option_words - stop_words
-
+            option_words = words(option_text)
             # If there's any meaningful word overlap, it's pattern matching
-            overlap = desc_words & option_words
-            if overlap:
+            if desc_words & option_words:
                 return False
 
         # Check descriptor vs parent (catches nutty/cocoa issues)
         parent = objects.get("parent", "")
         if parent:
-            parent_words = set(re.findall(r'\b\w+\b', parent.lower()))
-            parent_words = parent_words - stop_words
-            overlap = desc_words & parent_words
-            if overlap:
+            if desc_words & words(parent):
                 return False
 
         return True

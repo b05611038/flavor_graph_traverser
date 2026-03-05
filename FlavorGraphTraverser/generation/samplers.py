@@ -62,6 +62,21 @@ class DescriptorSampler:
         self._middle_cache = None
         self._all_cache = None
 
+        # Pre-compute root category for each descriptor (for same-branch filtering)
+        # Root category = the child of ROOT:SYSTEM that is an ancestor of this descriptor
+        self._root_category_cache: Dict[str, Optional[str]] = {}
+        for desc in graph.descriptions:
+            ancestors = graph.get_ancestors(desc)
+            # ancestors are ordered from immediate parent to root
+            # ROOT:SYSTEM is always last; its child is second-to-last
+            if len(ancestors) >= 2 and ancestors[-1] == 'ROOT:SYSTEM':
+                self._root_category_cache[desc] = ancestors[-2]
+            elif ancestors and ancestors[-1] != 'ROOT:SYSTEM':
+                # desc is a direct child of ROOT:SYSTEM (a root category itself)
+                self._root_category_cache[desc] = desc
+            else:
+                self._root_category_cache[desc] = None
+
     def sample_leaf(
         self,
         exclude: Optional[Set[str]] = None,
@@ -204,7 +219,8 @@ class DescriptorSampler:
         target: str,
         count: int,
         require_different_distances: bool = True,
-        min_difference: int = 1
+        min_difference: int = 1,
+        same_branch_only: bool = True
     ) -> List[tuple]:
         """
         Sample descriptors at different distances from target.
@@ -214,6 +230,8 @@ class DescriptorSampler:
             count: Number of descriptors to sample
             require_different_distances: Whether to require different distances
             min_difference: Minimum distance difference between samples
+            same_branch_only: If True, only include descriptors whose LCA with
+                target is not ROOT:SYSTEM (avoids ambiguous cross-branch ranking)
 
         Returns:
             List of (descriptor, distance) tuples
@@ -230,6 +248,11 @@ class DescriptorSampler:
             if desc in self.global_exclude:
                 continue
 
+            # Skip cross-branch candidates when same_branch_only is set
+            if same_branch_only:
+                if self._root_category_cache.get(target) != self._root_category_cache.get(desc):
+                    continue
+
             distance = self.graph.get_path_distance(target, desc)
             if distance is not None:
                 descriptors_with_distances.append((desc, distance))
@@ -237,23 +260,28 @@ class DescriptorSampler:
         if not descriptors_with_distances:
             return []
 
-        # Sort by distance
-        descriptors_with_distances.sort(key=lambda x: x[1])
-
         if not require_different_distances:
             # Just sample randomly
             sampled = random.sample(descriptors_with_distances, min(count, len(descriptors_with_distances)))
             return sampled
 
-        # Sample ensuring different distance levels
-        result = []
-        used_distances = set()
-
+        # Group by distance level, shuffle within each group for variety
+        from collections import defaultdict
+        by_distance = defaultdict(list)
         for desc, dist in descriptors_with_distances:
-            # Check if this distance is far enough from already used distances
+            by_distance[dist].append(desc)
+        for dist in by_distance:
+            random.shuffle(by_distance[dist])
+
+        # Sample one candidate per distance level, ensuring min_difference between levels
+        result = []
+        used_distances = []
+
+        for dist in sorted(by_distance.keys()):
             if not used_distances or all(abs(dist - ud) >= min_difference for ud in used_distances):
+                desc = by_distance[dist][0]  # first after shuffle = random pick
                 result.append((desc, dist))
-                used_distances.add(dist)
+                used_distances.append(dist)
 
                 if len(result) >= count:
                     break

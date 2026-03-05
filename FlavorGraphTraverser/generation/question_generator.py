@@ -115,8 +115,10 @@ class QuestionGenerator:
 
         # Build used-descriptor sets from ALL existing questions (confirmed + flagged + pending)
         # to prevent repetition regardless of audit status.
-        self._used_targets: set = set()       # targets already used in E1/E2/E3/F
-        self._used_e3_parents: set = set()    # similar_parent already used in E3
+        self._used_targets: set = set()           # targets already used in E1/E2/F
+        self._used_e3_parents: set = set()        # similar_parent already used in E3
+        self._used_e1_candidate_sets: set = set() # frozensets of E1 candidate triplets
+        self._used_e2_candidate_pairs: set = set() # frozensets of E2 (closer, farther) pairs
         for q in (existing_questions or []):
             obj = q.get('_objects', {})
             tt = q.get('task_type', '')
@@ -124,6 +126,14 @@ class QuestionGenerator:
                 t = obj.get('target', '')
                 if t:
                     self._used_targets.add(t)
+            if tt == 'E1_similarity_ranking':
+                cands = obj.get('candidates', [])
+                if cands:
+                    self._used_e1_candidate_sets.add(frozenset(cands))
+            elif tt == 'E2_pairwise_comparison':
+                pair = frozenset([obj.get('closer', ''), obj.get('farther', '')])
+                if all(pair):
+                    self._used_e2_candidate_pairs.add(pair)
             elif tt == 'E3_odd_one_out':
                 p = obj.get('similar_parent', '')
                 if p:
@@ -929,6 +939,10 @@ class QuestionGenerator:
             # Sort by distance (ascending = most similar first)
             candidates_sorted = [c for c, d in sorted(candidates_with_distances, key=lambda x: x[1])]
 
+            # Skip if this exact candidate set was already used in a previous question
+            if frozenset(candidates_sorted) in self._used_e1_candidate_sets:
+                continue
+
             # Map 'defected' -> 'other' for display
             candidates_sorted = [('other' if c == 'defected' else c) for c in candidates_sorted]
             target_display = 'other' if target == 'defected' else target
@@ -984,6 +998,7 @@ class QuestionGenerator:
                 self.descriptor_usage[target] += 1
                 type_usage[target] += 1
                 self._used_targets.add(target)
+                self._used_e1_candidate_sets.add(frozenset(candidates_sorted))
 
         return questions
 
@@ -1043,6 +1058,10 @@ class QuestionGenerator:
             closer = options_sorted[0][0]
             farther = options_sorted[1][0]
 
+            # Skip if this candidate pair was already used
+            if frozenset([closer, farther]) in self._used_e2_candidate_pairs:
+                continue
+
             # Map 'defected' -> 'other' for display
             target_display = 'other' if target == 'defected' else target
             option1_raw = closer if random.random() < 0.5 else farther
@@ -1084,6 +1103,7 @@ class QuestionGenerator:
                 self.descriptor_usage[target] += 1
                 type_usage[target] += 1
                 self._used_targets.add(target)
+                self._used_e2_candidate_pairs.add(frozenset([closer, farther]))
 
         return questions
 

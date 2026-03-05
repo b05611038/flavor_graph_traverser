@@ -55,7 +55,7 @@ taxonomic:
       - "distractors must not be siblings"
 
   A4_path_reconstruction:
-    count: 45  # Target: 30, generate extra for selection
+    count: 120  # Target: 30, generate extra for selection
     template: "What is the path from the root to '{descriptor}'?"
     description: "Reconstruct the hierarchical path"
     sampling:
@@ -93,7 +93,7 @@ taxonomic:
 # Category E: Similarity Reasoning (80 questions)
 similarity:
   E1_similarity_ranking:
-    count: 45  # Target: 30, generate extra for selection
+    count: 120  # Target: 30, generate extra for selection
     template: "Rank these flavors from most similar to '{target}' to least similar: [{candidates}]"
     description: "Rank candidates by similarity to target"
     sampling:
@@ -111,7 +111,7 @@ similarity:
       - "at least 2 distance levels (not all equal)"
 
   E2_pairwise_comparison:
-    count: 45  # Target: 30, generate extra for selection
+    count: 120  # Target: 30, generate extra for selection
     templates:
       - "Which is more similar to '{target}': '{option1}' or '{option2}'?"
       - "Is '{target}' more similar to '{option1}' or '{option2}'?"
