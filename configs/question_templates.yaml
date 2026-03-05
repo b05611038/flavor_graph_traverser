@@ -111,13 +111,14 @@ similarity:
       - "at least 2 distance levels (not all equal)"
 
   E2_pairwise_comparison:
-    count: 120  # Target: 30, generate extra for selection
-    template: "Which flavor is most similar to '{target}': '{option1}', '{option2}', or '{option3}'?"
+    count: 300  # Target: 30, generate extra; constraint min_closer_distance=2 reduces yield to ~30%
+    template: "Which of the following flavors is most similar to '{target}'?"
     description: "3-way choice: identify the closest flavor to the target (random baseline 33%)"
     sampling:
       target_type: "leaf_or_middle"
       option_count: 3  # one closer + two distractors at increasing distances
       min_distance_diff: 1  # at least 1 level gap between each distance level
+      min_closer_distance: 2  # closer option must be at least distance 2 (no trivial parent/name matches)
     options:
       type: "3_choice"
     similarity_metric: "path_distance"

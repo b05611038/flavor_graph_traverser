@@ -941,10 +941,11 @@ class QuestionGenerator:
 
         template = config.get(
             "template",
-            "Which flavor is most similar to '{target}': '{option1}', '{option2}', or '{option3}'?"
+            "Which of the following flavors is most similar to '{target}'?"
         )
 
         min_distance_diff = config.get("min_distance_diff", 1)
+        min_closer_distance = config.get("min_closer_distance", 2)
 
         # Track descriptors used in this task type
         type_usage = self.descriptor_usage_by_type[task_type]
@@ -979,6 +980,10 @@ class QuestionGenerator:
             middle = options_sorted[1][0]   # distractor
             farther = options_sorted[2][0]  # distractor
 
+            # Skip if correct answer is too close (trivial name/semantic match)
+            if options_sorted[0][1] < min_closer_distance:
+                continue
+
             # Skip if this candidate set was already used
             candidate_set = frozenset([closer, middle, farther])
             if candidate_set in self._used_e2_candidate_pairs:
@@ -997,13 +1002,8 @@ class QuestionGenerator:
             options = {letter: opt for letter, opt in zip(letters, all_opts)}
             correct_answer = [k for k, v in options.items() if v == closer_d][0]
 
-            # Build question text
-            question_text = template.format(
-                target=target_display,
-                option1=all_opts[0],
-                option2=all_opts[1],
-                option3=all_opts[2]
-            )
+            # Build question text (options are shown separately as A/B/C)
+            question_text = template.format(target=target_display)
             if 'other' in (target_display, closer_d, middle_d, farther_d):
                 question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
