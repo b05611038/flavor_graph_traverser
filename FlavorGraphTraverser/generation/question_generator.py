@@ -923,25 +923,26 @@ class QuestionGenerator:
 
     def _generate_e2(self, task_type: str, config: Dict) -> List[Dict]:
         """
-        Generate E2 (pairwise comparison) questions.
+        Generate E2 (3-way similarity choice) questions.
 
-        Template: "Which is more similar to '{target}': '{option1}' or '{option2}'?"
+        Template: "Which is most similar to '{target}': '{option1}', '{option2}', or '{option3}'?"
 
         Strategy:
             1. Sample target descriptor
-            2. Sample two options with clear distance difference
-            3. Closer one is correct answer
+            2. Sample 3 candidates at strictly increasing distances (d1 < d2 < d3)
+            3. Closest one (d1) is the correct answer
+            4. Shuffle options before presenting
+
+        Difficulty: random baseline is 33% (vs 50% for old binary format).
+        All candidates are in the same root-category branch as the target.
         """
         questions = []
         count = config["count"]
 
-        # Handle both "template" and "templates"
-        if "templates" in config:
-            templates = config["templates"]
-        elif "template" in config:
-            templates = [config["template"]]
-        else:
-            templates = ["Which is more similar to '{target}': '{option1}' or '{option2}'?"]
+        template = config.get(
+            "template",
+            "Which flavor is most similar to '{target}': '{option1}', '{option2}', or '{option3}'?"
+        )
 
         min_distance_diff = config.get("min_distance_diff", 1)
 
@@ -961,43 +962,51 @@ class QuestionGenerator:
             if target is None:
                 continue
 
-            # Sample two options with clear distance difference
+            # Sample 3 candidates at different distances (same branch as target)
             options_with_distances = self.sampler.sample_by_distance(
                 target=target,
-                count=2,
+                count=3,
                 require_different_distances=True,
                 min_difference=min_distance_diff
             )
 
-            if len(options_with_distances) < 2:
+            if len(options_with_distances) < 3:
                 continue
 
-            # Sort by distance
+            # Sort by distance: closest first
             options_sorted = sorted(options_with_distances, key=lambda x: x[1])
-            closer = options_sorted[0][0]
-            farther = options_sorted[1][0]
+            closer = options_sorted[0][0]   # correct answer
+            middle = options_sorted[1][0]   # distractor
+            farther = options_sorted[2][0]  # distractor
 
-            # Skip if this candidate pair was already used
-            if frozenset([closer, farther]) in self._used_e2_candidate_pairs:
+            # Skip if this candidate set was already used
+            candidate_set = frozenset([closer, middle, farther])
+            if candidate_set in self._used_e2_candidate_pairs:
                 continue
 
             # Map 'defected' -> 'other' for display
             target_display = 'other' if target == 'defected' else target
-            option1_raw = closer if random.random() < 0.5 else farther
-            option2_raw = farther if option1_raw == closer else closer
-            correct_answer = "A" if option1_raw == closer else "B"
-            option1 = 'other' if option1_raw == 'defected' else option1_raw
-            option2 = 'other' if option2_raw == 'defected' else option2_raw
-            closer_display = 'other' if closer == 'defected' else closer
+            closer_d  = 'other' if closer  == 'defected' else closer
+            middle_d  = 'other' if middle  == 'defected' else middle
+            farther_d = 'other' if farther == 'defected' else farther
 
-            template = random.choice(templates)
+            # Shuffle the 3 options and find correct letter
+            all_opts = [closer_d, middle_d, farther_d]
+            random.shuffle(all_opts)
+            letters = ['A', 'B', 'C']
+            options = {letter: opt for letter, opt in zip(letters, all_opts)}
+            correct_answer = [k for k, v in options.items() if v == closer_d][0]
 
-            # Add footnote if 'other' appears anywhere
-            question_text = template.format(target=target_display, option1=option1, option2=option2)
-            if 'other' in (target_display, option1, option2):
+            # Build question text
+            question_text = template.format(
+                target=target_display,
+                option1=all_opts[0],
+                option2=all_opts[1],
+                option3=all_opts[2]
+            )
+            if 'other' in (target_display, closer_d, middle_d, farther_d):
                 question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
-            # Generate UUID-based ID (E2)
             content_id = self._generate_uuid_id(task_type)
 
             question = {
@@ -1005,15 +1014,17 @@ class QuestionGenerator:
                 "category": "E",
                 "task_type": task_type,
                 "text": question_text,
-                "options": {"A": option1, "B": option2},
+                "options": options,
                 "correct_answer": correct_answer,
                 "_template": template,
                 "_objects": {
                     "target": target,
-                    "option1": option1_raw,
-                    "option2": option2_raw,
                     "closer": closer,
-                    "farther": farther
+                    "middle": middle,
+                    "farther": farther,
+                    "option1": all_opts[0],
+                    "option2": all_opts[1],
+                    "option3": all_opts[2],
                 }
             }
 
@@ -1022,7 +1033,7 @@ class QuestionGenerator:
                 self.descriptor_usage[target] += 1
                 type_usage[target] += 1
                 self._used_targets.add(target)
-                self._used_e2_candidate_pairs.add(frozenset([closer, farther]))
+                self._used_e2_candidate_pairs.add(candidate_set)
 
         return questions
 

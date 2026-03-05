@@ -112,20 +112,19 @@ similarity:
 
   E2_pairwise_comparison:
     count: 120  # Target: 30, generate extra for selection
-    templates:
-      - "Which is more similar to '{target}': '{option1}' or '{option2}'?"
-      - "Is '{target}' more similar to '{option1}' or '{option2}'?"
-    description: "Compare similarity of two options to a target"
+    template: "Which flavor is most similar to '{target}': '{option1}', '{option2}', or '{option3}'?"
+    description: "3-way choice: identify the closest flavor to the target (random baseline 33%)"
     sampling:
       target_type: "leaf_or_middle"
-      option_strategy: "clear_difference"  # One much closer than other
-      min_distance_diff: 1  # At least 1 level difference
+      option_count: 3  # one closer + two distractors at increasing distances
+      min_distance_diff: 1  # at least 1 level gap between each distance level
     options:
-      type: "binary_choice"
+      type: "3_choice"
     similarity_metric: "path_distance"
     validation:
       - "all descriptors must be in graph"
-      - "distance difference must be >= min_distance_diff"
+      - "3 candidates must be at strictly increasing distances from target"
+      - "closer option must not share words with target"
 
   E3_odd_one_out:
     count: 23  # Target: 15, generate extra for selection

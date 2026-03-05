@@ -17,8 +17,8 @@ PROTECTED_FIELDS = {
     'descriptor', 'descriptor1', 'descriptor2',
     'correct_sibling',
     'distractor1', 'distractor2', 'distractor3',
-    'target', 'option1', 'option2',
-    'closer', 'farther',
+    'target', 'option1', 'option2', 'option3',
+    'closer', 'middle', 'farther',
     'odd_one',
 }
 
