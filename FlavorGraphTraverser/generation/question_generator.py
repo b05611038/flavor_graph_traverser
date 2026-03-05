@@ -21,10 +21,12 @@ Example:
     >>> generator.save_questions(questions, "data/questions/generated.json")
 """
 
+import json
 import random
 import yaml
 import hashlib
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -295,7 +297,7 @@ class QuestionGenerator:
                 root = self.graph.get_root_category(parent)
                 if root:
                     root_categories.add(root)
-            except:
+            except Exception:
                 pass
 
         return sorted(list(root_categories))
@@ -400,19 +402,12 @@ class QuestionGenerator:
             # Create question with UUID-based ID
             content_id = self._generate_uuid_id(task_type)
 
-
             question = {
-
                 "id": content_id,
-
                 "category": "A",
-
                 "task_type": task_type,
-
                 "text": question_text,
-
                 "options": display_options,  # Use display options with 'other' instead of 'defected'
-
                 "correct_answer": correct_answer,  # List of correct letters
                 "answer_format": "multi_label",  # Indicates multiple selections allowed
                 "_template": template,
@@ -617,46 +612,20 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
-            # Generate content-based ID
-
-
+            # Generate UUID-based ID
             content_id = self._generate_uuid_id(task_type)
 
-
-
             question = {
-
-
                 "id": content_id,
-
-
                 "category": "A",
-
-
                 "task_type": task_type,
-
-
                 "text": template.format(descriptor=descriptor),
-
-
                 "options": options,
-
-
                 "correct_answer": correct_letter,
-
-
                 "_template": template,
-
-
                 "_objects": {
-
-
                     "descriptor": descriptor,
-
-
                     "parent": parent,
-
-
                     "correct_sibling": correct_sibling,
                     **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
                 }
@@ -726,43 +695,19 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
-            # Generate content-based ID
-
-
+            # Generate UUID-based ID
             content_id = self._generate_uuid_id(task_type)
 
-
-
             question = {
-
-
                 "id": content_id,
-
-
                 "category": "A",
-
-
                 "task_type": task_type,
-
-
                 "text": template.format(descriptor=descriptor),
-
-
                 "options": options,
-
-
                 "correct_answer": correct_letter,
-
-
                 "_template": template,
-
-
                 "_objects": {
-
-
                     "descriptor": descriptor,
-
-
                     "correct_path": correct_path,
                     **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
                 }
@@ -839,46 +784,20 @@ class QuestionGenerator:
                 distractors=distractors
             )
 
-            # Generate content-based ID
-
-
+            # Generate UUID-based ID
             content_id = self._generate_uuid_id(task_type)
 
-
-
             question = {
-
-
                 "id": content_id,
-
-
                 "category": "A",
-
-
                 "task_type": task_type,
-
-
                 "text": template.format(descriptor1=descriptor1, descriptor2=descriptor2),
-
-
                 "options": options,
-
-
                 "correct_answer": correct_letter,
-
-
                 "_template": template,
-
-
                 "_objects": {
-
-
                     "descriptor1": descriptor1,
-
-
                     "descriptor2": descriptor2,
-
-
                     "lca": lca,
                     **{f"distractor{j+1}": d for j, d in enumerate(distractors)}
                 }
@@ -1148,8 +1067,8 @@ class QuestionGenerator:
             # Sample 3 children as similar group
             similar_group = random.sample(children, 3)
 
-            # Sample odd one from different parent
-            odd_one = self.sampler.sample_different_branch(
+            # Sample odd one from outside this parent's children
+            odd_one = self.sampler.sample_any(
                 exclude=set(children),
                 exclude_overused=True,
                 max_usage=self.max_reuse,
@@ -1462,9 +1381,6 @@ class QuestionGenerator:
         Example:
             >>> generator.save_questions(questions, "data/questions/generated.json")
         """
-        import json
-        from pathlib import Path
-
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1499,7 +1415,6 @@ class QuestionGenerator:
 
     def _get_timestamp(self) -> str:
         """Get ISO timestamp."""
-        from datetime import datetime
         return datetime.now().isoformat()
 
     @staticmethod

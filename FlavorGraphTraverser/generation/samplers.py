@@ -10,6 +10,7 @@ Classes:
 """
 
 import random
+import itertools
 from typing import List, Optional, Set, Dict
 from collections import defaultdict
 
@@ -266,7 +267,6 @@ class DescriptorSampler:
             return sampled
 
         # Group by distance level, shuffle within each group for variety
-        from collections import defaultdict
         by_distance = defaultdict(list)
         for desc, dist in descriptors_with_distances:
             by_distance[dist].append(desc)
@@ -287,34 +287,6 @@ class DescriptorSampler:
                     break
 
         return result
-
-    def sample_different_branch(
-        self,
-        exclude: Optional[Set[str]] = None,
-        exclude_overused: bool = False,
-        max_usage: int = 3,
-        usage_tracker: Optional[Dict[str, int]] = None
-    ) -> Optional[str]:
-        """
-        Sample descriptor from a different branch (different parent).
-
-        Args:
-            exclude: Set of descriptors to exclude
-            exclude_overused: Whether to exclude overused descriptors
-            max_usage: Maximum times a descriptor can be used
-            usage_tracker: Dict tracking descriptor usage counts
-
-        Returns:
-            Sampled descriptor or None if no valid options
-        """
-        # Just sample any descriptor, excluding the provided set
-        return self.sample_any(
-            exclude=exclude,
-            exclude_overused=exclude_overused,
-            max_usage=max_usage,
-            usage_tracker=usage_tracker
-        )
-
 
 class DistractorGenerator:
     """
@@ -504,7 +476,7 @@ class DistractorGenerator:
 
         return random.sample(cousins, count)
 
-    def sample_by_distance(
+    def sample_in_distance_range(
         self,
         target: str,
         candidates: List[str],
@@ -512,19 +484,19 @@ class DistractorGenerator:
         distance_range: tuple = (2, 5)
     ) -> List[str]:
         """
-        Sample descriptors by path distance from target.
+        Sample descriptors within a path-distance range from target.
 
         Args:
             target: Target descriptor
             candidates: List of candidate descriptors
             count: Number to sample
-            distance_range: (min_distance, max_distance) range
+            distance_range: (min_distance, max_distance) inclusive range
 
         Returns:
             List of sampled descriptors
 
         Example:
-            >>> distractors = gen.sample_by_distance(
+            >>> distractors = gen.sample_in_distance_range(
             ...     "chocolate",
             ...     all_descriptors,
             ...     count=3,
@@ -733,8 +705,6 @@ class DistractorGenerator:
         Returns:
             List of wrong ranking strings
         """
-        import itertools
-
         distractors = []
         correct_ranking = " > ".join(candidates)
 

@@ -7,6 +7,7 @@ Classes:
     QuestionValidator: Validates questions meet quality criteria
 """
 
+import re
 from typing import Dict, Any, List, Optional, Set
 
 from ..graph import CoffeeDescriptionGraph
@@ -33,6 +34,13 @@ STRUCTURAL_FIELDS = {
     'is_ancestor', 'correct_path', 'correct_ranking',
     'question_subtype', 'similar_parent',
 }
+
+_STOP_WORDS = {'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'}
+
+
+def _tokenize(s: str) -> Set[str]:
+    """Return meaningful word tokens from a string, excluding stop words."""
+    return set(re.findall(r'\b\w+\b', s.lower())) - _STOP_WORDS
 
 
 class QuestionValidator:
@@ -92,35 +100,29 @@ class QuestionValidator:
         Example:
             >>> is_valid = validator.validate(question)
         """
-        # Check required fields
         if not self._check_required_fields(question):
             return False
 
-        # Check options format
         if not self._check_options_format(question):
             return False
 
-        # Check correct answer is valid
         if not self._check_correct_answer(question):
             return False
 
-        # Check descriptors exist in graph
         if not self._check_descriptors_in_graph(question):
             return False
 
-        # Check no duplicate options
         if not self._check_no_duplicate_options(question):
             return False
 
-        # Check no data leakage (components in tool graph)
         if not self._check_no_leakage(question):
             return False
 
-        # Check no ROOT:SYSTEM in any field (structural node, never valid in questions)
+        # ROOT:SYSTEM is a structural node and must never appear in any question field
         if not self._check_no_root_system(question):
             return False
 
-        # Check no text overlap (pattern matching prevention)
+        # Reject questions solvable by text/name matching rather than graph reasoning
         if not self._check_no_text_overlap(question):
             return False
 
@@ -130,68 +132,76 @@ class QuestionValidator:
             return self._validate_a1(question)
         elif task_type.startswith("A2"):
             return self._validate_a2(question)
-        # Add more task-specific validators as needed
+        # A3–A5 and E1–E3 rely on the shared checks above.
+        # Their graph relationships are verified during generation (not re-validated here)
+        # because re-checking paths/siblings/LCAs would duplicate generation logic.
 
         return True
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    def _find_leaked_components(self, objects: Dict[str, Any]) -> List[tuple]:
+        """
+        Return (field, value) pairs whose values appear in the tool graph.
+
+        Used by both _check_no_leakage() and get_leaked_fields() to avoid
+        duplicating the field-iteration logic.
+        """
+        leaked = []
+
+        for field in PROTECTED_FIELDS:
+            value = objects.get(field)
+            if isinstance(value, str) and value in self.tool_graph_nodes:
+                leaked.append((field, value))
+
+        for field in PROTECTED_LIST_FIELDS:
+            value = objects.get(field)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and item in self.tool_graph_nodes:
+                        leaked.append((f"{field}[]", item))
+
+        return leaked
+
+    # ------------------------------------------------------------------
+    # Generic checks
+    # ------------------------------------------------------------------
 
     def _check_required_fields(self, question: Dict[str, Any]) -> bool:
         """Check all required fields are present."""
         required = ["id", "category", "task_type", "text", "options", "correct_answer"]
-
-        for field in required:
-            if field not in question:
-                return False
-
-        return True
+        return all(field in question for field in required)
 
     def _check_options_format(self, question: Dict[str, Any]) -> bool:
         """Check options are properly formatted."""
         options = question.get("options", {})
-
-        if not isinstance(options, dict):
+        if not isinstance(options, dict) or len(options) == 0:
             return False
-
-        if len(options) == 0:
-            return False
-
-        # Check all keys are single uppercase letters
-        for key in options.keys():
-            if not (isinstance(key, str) and len(key) == 1 and key.isupper()):
-                return False
-
-        return True
+        return all(isinstance(key, str) and len(key) == 1 and key.isupper() for key in options)
 
     def _check_correct_answer(self, question: Dict[str, Any]) -> bool:
         """Check correct answer is in options (supports both single and multi-label)."""
         correct_answer = question.get("correct_answer")
         options = question.get("options", {})
-
-        # Handle multi-label format (list of letters)
         if isinstance(correct_answer, list):
-            # All letters must be valid option keys
             return all(letter in options for letter in correct_answer)
-
-        # Handle single-label format (single letter)
         return correct_answer in options
 
     def _check_descriptors_in_graph(self, question: Dict[str, Any]) -> bool:
         """Check all descriptors mentioned exist in graph."""
         objects = question.get("_objects", {})
-
+        descriptor_keys = {"descriptor", "descriptor1", "descriptor2", "ancestor", "parent", "root", "root_category"}
         for key, value in objects.items():
-            if isinstance(value, str) and not value.startswith("_"):
-                # Check if it's a descriptor (not metadata)
-                if key in ["descriptor", "descriptor1", "descriptor2", "ancestor", "parent", "root", "root_category"]:
-                    if value not in self.graph.descriptions:
-                        return False
-
+            if key in descriptor_keys and isinstance(value, str):
+                if value not in self.graph.descriptions:
+                    return False
         return True
 
     def _check_no_duplicate_options(self, question: Dict[str, Any]) -> bool:
         """Check no duplicate option values."""
-        options = question.get("options", {})
-        values = list(options.values())
-
+        values = list(question.get("options", {}).values())
         return len(values) == len(set(values))
 
     def _check_no_leakage(self, question: Dict[str, Any]) -> bool:
@@ -206,25 +216,9 @@ class QuestionValidator:
         graph since they represent categorical information.
         """
         if not self.tool_graph_nodes:
-            return True  # No tool graph provided, skip check
-
+            return True
         objects = question.get("_objects", {})
-
-        # Check protected string fields
-        for field in PROTECTED_FIELDS:
-            value = objects.get(field)
-            if isinstance(value, str) and value in self.tool_graph_nodes:
-                return False
-
-        # Check protected list fields
-        for field in PROTECTED_LIST_FIELDS:
-            value = objects.get(field)
-            if isinstance(value, list):
-                for item in value:
-                    if isinstance(item, str) and item in self.tool_graph_nodes:
-                        return False
-
-        return True
+        return len(self._find_leaked_components(objects)) == 0
 
     def _check_no_root_system(self, question: Dict[str, Any]) -> bool:
         """
@@ -232,130 +226,72 @@ class QuestionValidator:
 
         ROOT:SYSTEM is a structural node in the graph and should never be used
         as a component in questions (descriptor, parent, ancestor, path, etc.).
-        This is a critical validation rule that applies to ALL fields.
         """
         objects = question.get("_objects", {})
-
-        # Check all string fields
-        for field, value in objects.items():
-            if isinstance(value, str):
-                if 'ROOT:SYSTEM' in value:
+        for value in objects.values():
+            if isinstance(value, str) and 'ROOT:SYSTEM' in value:
+                return False
+            if isinstance(value, list):
+                if any(isinstance(item, str) and 'ROOT:SYSTEM' in item for item in value):
                     return False
-            elif isinstance(value, list):
-                # Check all list items
-                for item in value:
-                    if isinstance(item, str) and 'ROOT:SYSTEM' in item:
-                        return False
-
         return True
 
     def _check_no_text_overlap(self, question: Dict[str, Any]) -> bool:
         """
-        Check that the descriptor doesn't have significant word overlap with options.
+        Prevent questions solvable by name/text matching rather than graph reasoning.
 
-        This prevents trivial pattern matching questions like:
-        - "citrus" with option "orange fruit" (both contain "citrus")
-        - "peanut butter" as descriptor with parent "peanut"
-        - "chocolate" with option containing "chocolate"
-
-        NOTE: Skipped for A4 (path reconstruction) questions where the descriptor
-        MUST appear in the path options.
-
-        Returns:
-            True if no problematic overlap, False otherwise
+        Rules by task type:
+        - E1: reject if the CORRECT (closest) candidate shares words with the target.
+              Distractors sharing words are fine — they act as traps.
+        - E2: reject if the CORRECT (closer) option shares words with the target.
+        - A1–A5: reject if the descriptor shares words with any option or its parent.
+              Skipped for A4 where the descriptor must appear in the path options.
         """
-        import re
-
-        # Skip check for A4 questions (descriptor must appear in path)
         task_type = question.get("task_type", "")
+        objects = question.get("_objects", {})
+
         if task_type == "A4_path_reconstruction":
+            # Descriptor is part of the path, so overlap is expected and correct
             return True
 
-        objects = question.get("_objects", {})
-        task_type = question.get("task_type", "")
-
-        stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'}
-
-        def words(s):
-            return set(re.findall(r'\b\w+\b', s.lower())) - stop_words
-
-        # For E1/E2: reject only if the CORRECT (closest) answer has text overlap
-        # with the target — that makes the answer obvious by name matching.
-        # Distractors sharing words with the target are fine (or even useful as traps).
-        if task_type == 'E1_similarity_ranking':
+        if task_type == "E1_similarity_ranking":
             target = objects.get("target", "")
             candidates = objects.get("candidates", [])
-            # candidates are sorted closest-first; index 0 is the correct answer
+            # candidates[0] is the closest (correct answer)
             if target and candidates:
-                closest = candidates[0]
-                if words(target) & words(closest):
+                if _tokenize(target) & _tokenize(candidates[0]):
                     return False
             return True
 
-        if task_type == 'E2_pairwise_comparison':
+        if task_type == "E2_pairwise_comparison":
             target = objects.get("target", "")
             closer = objects.get("closer", "")
-            if target and closer:
-                if words(target) & words(closer):
-                    return False
+            if target and closer and (_tokenize(target) & _tokenize(closer)):
+                return False
             return True
 
-        # For E3: check odd_one and similar_group members don't share words
-        # (no additional overlap check needed beyond what A3 already does)
-
+        # Default: check descriptor against options and parent
         descriptor = objects.get("descriptor", "")
-
         if not descriptor:
             return True
 
-        # Normalize descriptor to words
-        desc_words = words(descriptor)
-
+        desc_words = _tokenize(descriptor)
         if not desc_words:
             return True
 
-        # Check descriptor vs options (from question options dict)
-        options = question.get("options", {})
-        for option_text in options.values():
-            option_words = words(option_text)
-            # If there's any meaningful word overlap, it's pattern matching
-            if desc_words & option_words:
+        for option_text in question.get("options", {}).values():
+            if desc_words & _tokenize(option_text):
                 return False
 
-        # Check descriptor vs parent (catches nutty/cocoa issues)
         parent = objects.get("parent", "")
-        if parent:
-            if desc_words & words(parent):
-                return False
+        if parent and (desc_words & _tokenize(parent)):
+            return False
 
         return True
 
-    def get_leaked_fields(self, question: Dict[str, Any]) -> List[str]:
-        """
-        Get list of fields that leak into the tool graph.
-
-        Returns:
-            List of "field_name: value" strings for leaked components.
-        """
-        if not self.tool_graph_nodes:
-            return []
-
-        leaked = []
-        objects = question.get("_objects", {})
-
-        for field in PROTECTED_FIELDS:
-            value = objects.get(field)
-            if isinstance(value, str) and value in self.tool_graph_nodes:
-                leaked.append(f"{field}: {value}")
-
-        for field in PROTECTED_LIST_FIELDS:
-            value = objects.get(field)
-            if isinstance(value, list):
-                for item in value:
-                    if isinstance(item, str) and item in self.tool_graph_nodes:
-                        leaked.append(f"{field}[]: {item}")
-
-        return leaked
+    # ------------------------------------------------------------------
+    # Task-specific validators
+    # ------------------------------------------------------------------
 
     def _validate_a1(self, question: Dict[str, Any]) -> bool:
         """
@@ -371,44 +307,26 @@ class QuestionValidator:
         objects = question.get("_objects", {})
         descriptor = objects.get("descriptor")
 
-        if not descriptor:
+        if not descriptor or descriptor not in self.graph.descriptions:
             return False
 
-        if descriptor not in self.graph.descriptions:
-            return False
-
-        # Check if multi-label format
         answer_format = question.get("answer_format", "single")
         correct_answer = question["correct_answer"]
         options = question["options"]
 
         if answer_format == "multi_label" and isinstance(correct_answer, list):
-            # Multi-label validation
             valid_roots_in_options = set(objects.get("valid_roots_in_options", []))
-
-            # Get which options are marked correct
             marked_correct = set(options[letter] for letter in correct_answer)
-
-            # Check marked correct matches valid roots
             if marked_correct != valid_roots_in_options:
                 return False
-
         else:
-            # Single-label validation (legacy)
             correct_option_value = options[correct_answer]
             actual_root = self.graph.get_root_category(descriptor)
-
             if correct_option_value != actual_root:
                 return False
 
-        # Check all options are valid roots
         all_roots = set(self.graph.get_root_categories())
-
-        for option_value in options.values():
-            if option_value not in all_roots:
-                return False
-
-        return True
+        return all(v in all_roots for v in options.values())
 
     def _validate_a2(self, question: Dict[str, Any]) -> bool:
         """
@@ -426,34 +344,35 @@ class QuestionValidator:
         if not descriptor or not ancestor:
             return False
 
-        if descriptor not in self.graph.descriptions:
+        if descriptor not in self.graph.descriptions or ancestor not in self.graph.descriptions:
             return False
 
-        if ancestor not in self.graph.descriptions:
-            return False
-
-        # Check actual relationship
         actual_ancestors = self.graph.get_ancestors(descriptor)
         actually_is_ancestor = ancestor in actual_ancestors
 
-        # Check metadata matches reality
         if is_ancestor != actually_is_ancestor:
             return False
 
-        # Check correct answer matches
         correct_letter = question["correct_answer"]
         options = question["options"]
+        expected = "Yes" if is_ancestor else "No"
+        return options[correct_letter] == expected
 
-        if is_ancestor:
-            # Should be "Yes"
-            if options[correct_letter] != "Yes":
-                return False
-        else:
-            # Should be "No"
-            if options[correct_letter] != "No":
-                return False
+    # ------------------------------------------------------------------
+    # Diagnostic utilities
+    # ------------------------------------------------------------------
 
-        return True
+    def get_leaked_fields(self, question: Dict[str, Any]) -> List[str]:
+        """
+        Get list of fields that leak into the tool graph.
+
+        Returns:
+            List of "field_name: value" strings for leaked components.
+        """
+        if not self.tool_graph_nodes:
+            return []
+        objects = question.get("_objects", {})
+        return [f"{field}: {value}" for field, value in self._find_leaked_components(objects)]
 
     def get_validation_report(self, question: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -470,32 +389,20 @@ class QuestionValidator:
             >>> print(report["is_valid"])
             >>> print(report["errors"])
         """
-        report = {
-            "is_valid": True,
-            "errors": [],
-            "warnings": []
-        }
+        report = {"is_valid": True, "errors": [], "warnings": []}
 
-        # Run all checks and collect errors
-        if not self._check_required_fields(question):
-            report["is_valid"] = False
-            report["errors"].append("Missing required fields")
+        checks = [
+            (self._check_required_fields, "Missing required fields"),
+            (self._check_options_format, "Invalid options format"),
+            (self._check_correct_answer, "Correct answer not in options"),
+            (self._check_descriptors_in_graph, "Descriptor not found in graph"),
+            (self._check_no_duplicate_options, "Duplicate option values"),
+        ]
 
-        if not self._check_options_format(question):
-            report["is_valid"] = False
-            report["errors"].append("Invalid options format")
-
-        if not self._check_correct_answer(question):
-            report["is_valid"] = False
-            report["errors"].append("Correct answer not in options")
-
-        if not self._check_descriptors_in_graph(question):
-            report["is_valid"] = False
-            report["errors"].append("Descriptor not found in graph")
-
-        if not self._check_no_duplicate_options(question):
-            report["is_valid"] = False
-            report["errors"].append("Duplicate option values")
+        for check_fn, error_msg in checks:
+            if not check_fn(question):
+                report["is_valid"] = False
+                report["errors"].append(error_msg)
 
         if not self._check_no_leakage(question):
             report["is_valid"] = False
