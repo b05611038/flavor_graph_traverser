@@ -1,280 +1,238 @@
 #!/usr/bin/env python3
 """
-Generate All Questions
+Generate Questions
 
-Generates the full set of ~275 questions across all task types.
+Generates benchmark questions from the System Graph.
+Supports generating all task types or specific ones.
+
+Usage:
+    python scripts/generate_all_questions.py              # Generate all task types
+    python scripts/generate_all_questions.py E2            # Generate only E2
+    python scripts/generate_all_questions.py E2 E3         # Generate E2 and E3
+    python scripts/generate_all_questions.py A1 --count 200  # Generate A1 with custom count
+    python scripts/generate_all_questions.py E2 --seed 999   # Use different random seed
 """
 
 import sys
 import json
+import argparse
 from pathlib import Path
+from collections import Counter
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
 from FlavorGraphTraverser.generation import QuestionGenerator
+from FlavorGraphTraverser.backup import backup_before_write
+
+# Map short names to full task type names
+TASK_TYPE_MAP = {
+    'A1': 'A1_root_classification',
+    'A2': 'A2_ancestor_verification',
+    'A3': 'A3_sibling_identification',
+    'A4': 'A4_path_reconstruction',
+    'A5': 'A5_lca_finding',
+    'E1': 'E1_similarity_ranking',
+    'E2': 'E2_pairwise_comparison',
+    'E3': 'E3_odd_one_out',
+    'F':  'F_flavor_description',
+}
+
+# Map full task type to config section and key
+TASK_CONFIG_SECTION = {
+    'A1_root_classification': ('taxonomic', 'A1_root_classification'),
+    'A2_ancestor_verification': ('taxonomic', 'A2_ancestor_verification'),
+    'A3_sibling_identification': ('taxonomic', 'A3_sibling_identification'),
+    'A4_path_reconstruction': ('taxonomic', 'A4_path_reconstruction'),
+    'A5_lca_finding': ('taxonomic', 'A5_lca_finding'),
+    'E1_similarity_ranking': ('similarity', 'E1_similarity_ranking'),
+    'E2_pairwise_comparison': ('similarity', 'E2_pairwise_comparison'),
+    'E3_odd_one_out': ('similarity', 'E3_odd_one_out'),
+    'F_flavor_description': ('open_ended', 'F_flavor_description'),
+}
+
+
+def build_exclusion_set(system_graph, tool_data):
+    """Build the full exclusion set from tool graph + non-flavor categories."""
+    all_tool_nodes = set(tool_data['descriptions'])
+    tool_nodes = {n for n in all_tool_nodes if not n.startswith('ROOT:')}
+
+    non_flavor = set()
+
+    # Exclude 'taste' and all descendants
+    if 'taste' in system_graph.descriptions:
+        queue = ['taste']
+        visited = set(['taste'])
+        while queue:
+            node = queue.pop(0)
+            for child in system_graph.get_children(node):
+                if child not in visited:
+                    visited.add(child)
+                    queue.append(child)
+        non_flavor.update(visited)
+
+    # Exclude structural/empty categories
+    for n in ['baked', 'defected', 'ROOT:SYSTEM']:
+        if n in system_graph.descriptions:
+            non_flavor.add(n)
+
+    exclude_set = tool_nodes | non_flavor
+    return exclude_set, tool_nodes
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Generate benchmark questions from the System Graph.',
+        epilog='Examples:\n'
+               '  %(prog)s                  # Generate all task types\n'
+               '  %(prog)s E2               # Generate only E2\n'
+               '  %(prog)s E2 E3 --count 500  # E2 and E3, 500 attempts each\n'
+               '  %(prog)s A1 --seed 999    # A1 with different seed\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        'task_types', nargs='*',
+        help=f'Task types to generate (default: all). Valid: {", ".join(sorted(TASK_TYPE_MAP.keys()))}',
+    )
+    parser.add_argument(
+        '--count', type=int, default=None,
+        help='Override the generation count (number of attempts)',
+    )
+    parser.add_argument(
+        '--seed', type=int, default=None,
+        help='Random seed (default: from config or 42)',
+    )
+    return parser.parse_args()
 
 
 def main():
-    print("="*70)
-    print("Generate All Questions")
-    print("="*70)
-    print()
+    args = parse_args()
 
-    # Load SYSTEM graph for question generation
+    # Resolve task types
+    if args.task_types:
+        task_types = []
+        for t in args.task_types:
+            t_upper = t.upper()
+            if t_upper in TASK_TYPE_MAP:
+                task_types.append(TASK_TYPE_MAP[t_upper])
+            elif t in TASK_TYPE_MAP.values():
+                task_types.append(t)
+            else:
+                print(f"Unknown task type: {t}")
+                print(f"Valid: {', '.join(sorted(TASK_TYPE_MAP.keys()))}")
+                return 1
+        generating_all = False
+    else:
+        task_types = list(TASK_TYPE_MAP.values())
+        generating_all = True
+
+    # Load graphs
     system_graph_file = "data/graphs/system_graph.pkl"
     tool_graph_file = "data/graphs/coffee_flavor_wheel.pkl"
 
     if not Path(system_graph_file).exists():
-        print(f"❌ Graph file not found: {system_graph_file}")
-        print()
-        print("Please dump graphs first:")
-        print("  python scripts/dump_graphs.py")
+        print(f"Graph file not found: {system_graph_file}")
+        print("Please run: python scripts/dump_graphs.py")
         return 1
 
-    print(f"Loading SYSTEM graph for questions: {system_graph_file}")
     system_data = load_graph_data(system_graph_file)
     system_graph = CoffeeDescriptionGraph(
-        system_data['descriptions'],
-        system_data['connections'],
-        root=system_data['root']
+        system_data['descriptions'], system_data['connections'], root=system_data['root']
     )
-    print(f"✓ Loaded SYSTEM graph: {len(system_graph.descriptions)} nodes")
+    print(f"System graph: {len(system_graph.descriptions)} nodes")
 
-    # Load coffee_flavor_wheel graph to create exclusion list
-    print(f"Loading tool graph for exclusion: {tool_graph_file}")
-    if Path(tool_graph_file).exists():
-        tool_data = load_graph_data(tool_graph_file)
-        tool_graph = CoffeeDescriptionGraph(
-            tool_data['descriptions'],
-            tool_data['connections'],
-            root=tool_data['root']
-        )
-        print(f"✓ Loaded tool graph: {len(tool_data['descriptions'])} total nodes")
+    if not Path(tool_graph_file).exists():
+        print(f"Tool graph not found: {tool_graph_file}")
+        return 1
 
-        # Calculate exclusion list - exclude ALL tool graph nodes (prevent data leakage)
-        # Any node in the tool graph can be looked up by a tool-augmented model,
-        # so all of them must be excluded from question components.
-        all_tool_nodes = set(tool_data['descriptions'])
-        # Remove ROOT nodes (structural, not actual flavors)
-        tool_nodes_for_exclusion = {n for n in all_tool_nodes if not n.startswith('ROOT:')}
-        tool_leaf_nodes = set(tool_graph.get_leaf_nodes())
-        tool_non_leaf = all_tool_nodes - tool_leaf_nodes
+    tool_data = load_graph_data(tool_graph_file)
+    exclude_set, tool_nodes = build_exclusion_set(system_graph, tool_data)
+    available = len(set(system_graph.descriptions) - exclude_set)
+    print(f"Exclusions: {len(exclude_set)} nodes ({len(tool_nodes)} tool + {len(exclude_set) - len(tool_nodes)} non-flavor)")
+    print(f"Available: {available} descriptors")
 
-        print(f"  - Leaf nodes: {len(tool_leaf_nodes)}")
-        print(f"  - Non-leaf nodes: {len(tool_non_leaf)} (intermediate/categories)")
-        print(f"  - Total tool nodes (excl ROOT): {len(tool_nodes_for_exclusion)} (all excluded)")
-
-        # Add structural/non-flavor categories to exclusion
-        print(f"\nExcluding non-flavor categories:")
-
-        # Exclude specific non-flavor categories and their descendants
-        non_flavor_descriptors = set()
-
-        # 1. Exclude 'taste' and all its descendants (taste attributes, not flavors)
-        if 'taste' in system_graph.descriptions:
-            taste_descendants = set(['taste'])
-            queue = ['taste']
-            visited = set(['taste'])
-
-            while queue:
-                node = queue.pop(0)
-                children = system_graph.get_children(node)
-                for child in children:
-                    if child not in visited:
-                        visited.add(child)
-                        taste_descendants.add(child)
-                        queue.append(child)
-
-            non_flavor_descriptors.update(taste_descendants)
-            print(f"  - 'taste' + descendants: {len(taste_descendants)} nodes")
-
-        # 2. Exclude 'baked' (empty category)
-        if 'baked' in system_graph.descriptions:
-            non_flavor_descriptors.add('baked')
-            print(f"  - 'baked': 1 node")
-
-        # 3. Exclude 'defected' root itself (its descendants are valid flavors,
-        #    but the root is a category that maps to 'other' in tool graph)
-        if 'defected' in system_graph.descriptions:
-            non_flavor_descriptors.add('defected')
-            print(f"  - 'defected': 1 node (root category, maps to 'other' in tool graph)")
-
-        # 4. Exclude 'ROOT:SYSTEM' node only (not its descendants!)
-        if 'ROOT:SYSTEM' in system_graph.descriptions:
-            non_flavor_descriptors.add('ROOT:SYSTEM')
-            print(f"  - 'ROOT:SYSTEM': 1 node (structural root)")
-
-        # Note: 'defected' (displays as 'other' on wheel) is kept - descendants are valid flavors
-
-        print(f"  Total non-flavor nodes: {len(non_flavor_descriptors)}")
-
-        # Combine exclusions: all tool graph nodes + non-flavor categories
-        exclude_set = tool_nodes_for_exclusion | non_flavor_descriptors
-        overlap = len(exclude_set & set(system_graph.descriptions))
-        available = len(set(system_graph.descriptions) - exclude_set)
-
-        print(f"\n✓ Total exclusions: {len(exclude_set)} nodes")
-        print(f"  - Tool graph nodes: {len(tool_nodes_for_exclusion)} (all non-ROOT)")
-        print(f"  - Non-flavor categories: {len(non_flavor_descriptors)}")
-        print(f"✓ Available: {available} unique flavor descriptors for questions")
-        print(f"✓ Design: No question component appears in tool graph")
-    else:
-        print(f"⚠ Tool graph not found, no exclusion applied")
-        exclude_set = set()
-        tool_nodes_for_exclusion = set()
-
-    print()
-
-    # Load existing questions (all statuses) to prevent repetition
-    existing_questions = []
+    # Load existing questions
     master_file = Path("data/questions/all_questions_system.json")
+    existing_questions = []
     if master_file.exists():
         with open(master_file) as f:
-            existing_data = json.load(f)
-        existing_questions = existing_data.get('questions', [])
-        print(f"Loaded {len(existing_questions)} existing questions for repetition prevention")
-    print()
+            master_data = json.load(f)
+        existing_questions = master_data.get('questions', [])
+        print(f"Existing questions: {len(existing_questions)}")
 
-    # Create generator with exclusion list and tool graph leakage checking
-    print("Generating all questions with data leakage prevention...")
+    # Determine seed
+    seed = args.seed if args.seed is not None else 42
+    if not generating_all and args.seed is None:
+        # Use a time-based seed for partial generation to avoid repeating same results
+        seed = int(datetime.now().timestamp()) % 100000
+        print(f"Using time-based seed: {seed} (override with --seed)")
+
+    # Create generator
     generator = QuestionGenerator(
         system_graph,
-        random_seed=42,
+        random_seed=seed,
         exclude_descriptors=exclude_set,
-        tool_graph_nodes=tool_nodes_for_exclusion,
+        tool_graph_nodes=tool_nodes,
         existing_questions=existing_questions,
     )
 
-    # Generate all questions
-    questions = generator.generate_all()
+    # Generate
+    short_names = [k for k, v in TASK_TYPE_MAP.items() if v in task_types]
+    print(f"\nGenerating: {', '.join(short_names)}")
+    print("=" * 60)
 
-    print(f"✓ Generated {len(questions)} questions")
+    questions = []
+    for tt in task_types:
+        section, key = TASK_CONFIG_SECTION[tt]
+        config = generator.config.get(section, {}).get(key, {})
+        if not config:
+            print(f"  {tt}: no config found, skipping")
+            continue
 
-    # Deduplicate questions by descriptor (important for A1 questions)
-    print("\nChecking for duplicate descriptors...")
+        if args.count is not None:
+            config = dict(config)  # copy to avoid mutating
+            config['count'] = args.count
+
+        result = generator.generate_category(tt, config)
+        short = tt.split('_')[0]
+        print(f"  {short}: {len(result)} generated (count={config.get('count', '?')})")
+        questions.extend(result)
+
+    print(f"\nTotal generated: {len(questions)}")
+
+    if not questions:
+        print("No questions generated.")
+        return 0
+
+    # Deduplicate
     unique_questions, duplicates = generator.deduplicate_questions(questions, by_field='descriptor')
-
     if duplicates:
-        print(f"⚠ Found {len(duplicates)} duplicate questions (removed)")
-        # Show which descriptors were duplicated
-        from collections import Counter
-        dup_descriptors = Counter()
-        for q in duplicates:
-            if '_objects' in q and 'descriptor' in q['_objects']:
-                dup_descriptors[q['_objects']['descriptor']] += 1
-
-        print("  Duplicate descriptors:")
-        for desc, count in dup_descriptors.most_common(5):
-            print(f"    - {desc} (appeared {count + 1} times)")
-    else:
-        print("✓ No duplicates found")
-
+        print(f"Removed {len(duplicates)} duplicates")
     questions = unique_questions
-    print(f"✓ Final count: {len(questions)} questions")
 
-    print("✓ defected→other mapping and footnote applied inline during generation")
-    print()
-
-    # Show breakdown by category
-    from collections import Counter
-    task_counts = Counter(q['task_type'] for q in questions)
-
-    print("="*70)
-    print("Question Breakdown")
-    print("="*70)
-
-    print("\nTaxonomic (A1-A5):")
-    for task in ['A1_root_classification', 'A2_ancestor_verification',
-                 'A3_sibling_identification', 'A4_path_reconstruction',
-                 'A5_lca_finding']:
-        count = task_counts.get(task, 0)
-        print(f"  {task}: {count}")
-
-    print("\nSimilarity (E1-E3):")
-    for task in ['E1_similarity_ranking', 'E2_pairwise_comparison',
-                 'E3_odd_one_out']:
-        count = task_counts.get(task, 0)
-        print(f"  {task}: {count}")
-
-    print("\nOpen-ended (F):")
-    for task in ['F_flavor_description']:
-        count = task_counts.get(task, 0)
-        print(f"  {task}: {count}")
-
-    print()
-    print(f"Total: {len(questions)} questions")
-    print()
-
-    # Append new questions to master file (never overwrite existing questions)
-    output_path = Path("data/questions/all_questions_system.json")
-    from FlavorGraphTraverser.backup import backup_before_write
-
-    if output_path.exists() and existing_questions:
-        # Load existing master and append only truly new IDs
-        with open(output_path) as f:
-            master_data = json.load(f)
+    # Append to master file
+    if master_file.exists() and existing_questions:
         existing_ids = {q['id'] for q in master_data['questions']}
         new_only = [q for q in questions if q['id'] not in existing_ids]
         master_data['questions'].extend(new_only)
         master_data['metadata']['total_questions'] = len(master_data['questions'])
-        master_data['metadata']['last_modified'] = __import__('datetime').datetime.now().isoformat()
-        backup_before_write(output_path)
-        with open(output_path, 'w') as f:
+        master_data['metadata']['last_modified'] = datetime.now().isoformat()
+        backup_before_write(master_file)
+        with open(master_file, 'w') as f:
             json.dump(master_data, f, indent=2)
-        print(f"✓ Appended {len(new_only)} new questions to: {output_path}")
-        print(f"  (skipped {len(questions) - len(new_only)} already-existing IDs)")
-        questions = new_only  # show stats for new questions only
+        print(f"Appended {len(new_only)} new questions (skipped {len(questions) - len(new_only)} existing)")
     else:
-        generator.save_questions(questions, str(output_path))
-        print(f"✓ Saved to: {output_path}")
-    print()
-    print("📝 Exclusion Strategy:")
-    print("   1. ALL tool graph nodes (prevent data leakage in descriptors, siblings, distractors)")
-    print("   2. Non-flavor categories: 'taste', 'baked', 'ROOT:SYSTEM'")
-    print("   3. Validator checks ALL question components against tool graph")
-    print("   → No question component (descriptor, sibling, distractor) appears in tool graph")
-    print("   → LLMs must reason about flavor relationships, not look up answers")
-    print()
+        generator.save_questions(questions, str(master_file))
+        print(f"Saved {len(questions)} questions to {master_file}")
 
-    # Show some samples
-    print("="*70)
-    print("Sample Questions")
-    print("="*70)
-
-    # Show one from each category
-    sample_tasks = [
-        'A1_root_classification',
-        'A2_ancestor_verification',
-        'A3_sibling_identification',
-        'A4_path_reconstruction',
-        'A5_lca_finding',
-        'E1_similarity_ranking',
-        'E2_pairwise_comparison',
-        'E3_odd_one_out',
-        'F_flavor_description'
-    ]
-
-    for task_type in sample_tasks:
-        matching = [q for q in questions if q['task_type'] == task_type]
-        if matching:
-            q = matching[0]
-            print(f"\n[{q['task_type']}]")
-            print(f"  {q['text']}")
-
-            if q.get('options'):
-                for k in sorted(q['options'].keys()):
-                    if q.get('correct_answer') == k:
-                        mark = "✓"
-                    else:
-                        mark = " "
-                    print(f"  [{mark}] ({k}) {q['options'][k]}")
-
-    print()
-    print("="*70)
-    print("✓ Ready for benchmark evaluation!")
-    print("="*70)
-    print()
+    # Summary
+    task_counts = Counter(q['task_type'] for q in questions)
+    print(f"\nBreakdown:")
+    for tt in task_types:
+        c = task_counts.get(tt, 0)
+        short = tt.split('_')[0]
+        print(f"  {short}: {c}")
 
     return 0
 

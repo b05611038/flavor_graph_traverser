@@ -324,15 +324,15 @@ def review_page():
 
 @app.route('/api/confirmed')
 def get_confirmed_questions():
-    """Get all confirmed questions."""
+    """Get all confirmed questions, optionally filtered by task_type."""
+    task_type_filter = request.args.get('task_type', '')
     confirmed_ids = auditor.get_confirmed_questions()
     confirmed = [q for q in all_questions if q.get("id") in confirmed_ids]
 
-    # Format for display
-    formatted = []
-    for q in confirmed:
-        f = format_question_for_display(q)
-        formatted.append(f)
+    if task_type_filter:
+        confirmed = [q for q in confirmed if q.get('task_type') == task_type_filter]
+
+    formatted = [format_question_for_display(q) for q in confirmed]
 
     return jsonify({
         "questions": formatted,
