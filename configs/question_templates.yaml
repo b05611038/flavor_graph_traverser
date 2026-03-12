@@ -129,7 +129,7 @@ similarity:
 
   E3_odd_one_out:
     count: 23  # Target: 15, generate extra for selection
-    template: "Which of these is the odd one out: [{candidates}]"
+    template: "Which of the following flavors does NOT belong with the others?"
     description: "Identify the descriptor that doesn't belong"
     sampling:
       candidate_count: 4

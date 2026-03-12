@@ -115,15 +115,19 @@ class QuestionGenerator:
         self.exclude_descriptors = exclude_descriptors or set()
         self.tool_graph_nodes = tool_graph_nodes or set()
 
-        # Build used-descriptor sets from ALL existing questions (confirmed + flagged + pending)
-        # to prevent repetition regardless of audit status.
+        # Build used-descriptor sets from existing questions to prevent repetition.
+        # E1/E2/F targets: block from confirmed + flagged + pending to avoid repeats.
+        # E3 parents: block from confirmed + flagged so the generator never reuses a parent
+        #             the user has already seen (whether accepted or rejected).
+        #             Pending E3 parents remain available for regeneration.
         self._used_targets: set = set()           # targets already used in E1/E2/F
-        self._used_e3_parents: set = set()        # similar_parent already used in E3
+        self._used_e3_parents: set = set()        # similar_parent used in confirmed/flagged E3
         self._used_e1_candidate_sets: set = set() # frozensets of E1 candidate triplets
         self._used_e2_candidate_pairs: set = set() # frozensets of E2 (closer, farther) pairs
         for q in (existing_questions or []):
             obj = q.get('_objects', {})
             tt = q.get('task_type', '')
+            audit_status = q.get('_audit_status', 'pending')  # injected by caller
             if tt in ('E1_similarity_ranking', 'E2_pairwise_comparison', 'F_flavor_description'):
                 t = obj.get('target', '')
                 if t:
@@ -136,7 +140,7 @@ class QuestionGenerator:
                 pair = frozenset([obj.get('closer', ''), obj.get('farther', '')])
                 if all(pair):
                     self._used_e2_candidate_pairs.add(pair)
-            elif tt == 'E3_odd_one_out':
+            elif tt == 'E3_odd_one_out' and audit_status == 'confirmed':
                 p = obj.get('similar_parent', '')
                 if p:
                     self._used_e3_parents.add(p)
@@ -1044,47 +1048,140 @@ class QuestionGenerator:
         Template: "Which of these is the odd one out: [{candidates}]"
 
         Strategy:
-            1. Sample a parent node
-            2. Sample 3 of its children (similar group)
-            3. Sample 1 from different parent (odd one)
+            1. Sample a parent node with >= 3 valid children
+            2. Sample 3 children as similar group
+            3. Sample odd one from a DIFFERENT root category
             4. Shuffle and present
+
+        Quality constraints:
+            - Odd one must be from a different root category than siblings (strict separation)
+            - No shared words among siblings (prevents trivial name-pattern detection)
+            - No shared words between odd one and any sibling (prevents giveaway)
+            - Minimum node name length >= 3 chars (filters noise like 'me', 'old')
+            - Minimum node depth >= 2 from root (filters generic category names)
         """
         questions = []
         count = config["count"]
         template = config["template"]
-
-        # Try more attempts to reach target count
-        max_attempts = count * 20
+        max_attempts = count * 30
         attempts = 0
 
-        # Track descriptors used in this task type
         type_usage = self.descriptor_usage_by_type[task_type]
+
+        # Build root-category lookup
+        root_categories = set(self.graph.get_children('ROOT:SYSTEM'))
+
+        def get_root(node):
+            if node in root_categories:
+                return node
+            visited = {node}
+            queue = [node]
+            while queue:
+                n = queue.pop(0)
+                p = self.graph.get_parent(n)
+                if p is None or p == 'ROOT:SYSTEM':
+                    return n
+                if p in root_categories:
+                    return p
+                if p not in visited:
+                    visited.add(p)
+                    queue.append(p)
+            return node
+
+        def get_depth(node):
+            depth = 0
+            n = node
+            while True:
+                p = self.graph.get_parent(n)
+                if p is None or p == 'ROOT:SYSTEM':
+                    return depth
+                depth += 1
+                n = p
+
+        def words(name):
+            return set(name.lower().split())
+
+        def normalize(name):
+            """Remove spaces/hyphens for near-duplicate detection."""
+            return name.lower().replace(' ', '').replace('-', '')
+
+        def has_near_duplicate(group):
+            """True if any two nodes are essentially the same after normalization.
+            e.g. 'redcurrant' vs 'red currant jam' share 'redcurrant' as prefix."""
+            norms = [normalize(n) for n in group]
+            for i in range(len(norms)):
+                for j in range(i + 1, len(norms)):
+                    a, b = norms[i], norms[j]
+                    # One is a prefix of the other (e.g. 'redcurrant' in 'redcurrantjam')
+                    if a.startswith(b) or b.startswith(a):
+                        return True
+            return False
+
+        def has_common_root_word(group):
+            """True if a significant word (len>=4) appears as substring in ALL siblings.
+            Catches cases like 'herb tea', 'vanilla herb', 'herbal tea' where 'herb'
+            appears in all three (exact or as prefix of 'herbal')."""
+            all_lower = [n.lower() for n in group]
+            # Collect all words of length >= 4 from all siblings
+            candidate_words = set()
+            for n in all_lower:
+                for w in n.split():
+                    if len(w) >= 3:
+                        candidate_words.add(w)
+            for w in candidate_words:
+                if all(w in n for n in all_lower):
+                    return True
+            return False
+
+        def is_valid_node(node):
+            """Filter out short or too-shallow nodes."""
+            return len(node) >= 3 and get_depth(node) >= 2
 
         while len(questions) < count and attempts < max_attempts:
             attempts += 1
 
-            # Sample a parent with at least 3 children — skip already-used parents
+            # Sample a parent with at least 3 valid children
             parent = self.sampler.sample_middle()
-            if parent is None:
+            if parent is None or parent in self._used_e3_parents:
                 continue
 
-            if parent in self._used_e3_parents:
-                continue
-
-            children = self.graph.get_children(parent)
+            children = [c for c in self.graph.get_children(parent)
+                        if c not in self.exclude_descriptors and is_valid_node(c)]
             if len(children) < 3:
                 continue
 
-            # Sample 3 children as similar group
+            # Sample 3 siblings; reject if trivially grouped by word patterns
             similar_group = random.sample(children, 3)
+            if has_near_duplicate(similar_group):
+                continue
+            if has_common_root_word(similar_group):
+                continue
 
-            # Sample odd one from outside this parent's children
-            odd_one = self.sampler.sample_any(
-                exclude=set(children),
-                exclude_overused=True,
-                max_usage=self.max_reuse,
-                usage_tracker=self.descriptor_usage
-            )
+            sibling_root = get_root(parent)
+
+            # Sample odd one from a DIFFERENT root category
+            exclude_for_odd = set(children)
+            odd_one = None
+            for _ in range(30):
+                candidate = self.sampler.sample_any(
+                    exclude=exclude_for_odd,
+                    exclude_overused=True,
+                    max_usage=self.max_reuse,
+                    usage_tracker=self.descriptor_usage
+                )
+                if candidate is None:
+                    break
+                if get_root(candidate) == sibling_root:
+                    continue
+                if not is_valid_node(candidate):
+                    continue
+                # Odd one must not share words with any sibling, and not be near-duplicate
+                if any(words(candidate) & words(s) for s in similar_group):
+                    continue
+                if has_near_duplicate([candidate] + similar_group):
+                    continue
+                odd_one = candidate
+                break
 
             if odd_one is None:
                 continue
@@ -1093,26 +1190,18 @@ class QuestionGenerator:
             similar_group_display = ['other' if c == 'defected' else c for c in similar_group]
             odd_one_display = 'other' if odd_one == 'defected' else odd_one
 
-            # Combine and shuffle
             all_candidates_display = similar_group_display + [odd_one_display]
             random.shuffle(all_candidates_display)
 
-            # Build candidate list string
-            candidates_str = ", ".join(all_candidates_display)
-
-            # Find which letter corresponds to odd one
             letters = ['A', 'B', 'C', 'D']
             options = {letter: cand for letter, cand in zip(letters, all_candidates_display)}
             correct_letter = [k for k, v in options.items() if v == odd_one_display][0]
 
-            # Add footnote if 'other' appears
-            question_text = template.format(candidates=candidates_str)
+            question_text = template
             if 'other' in all_candidates_display:
                 question_text += "\n\n*'other' includes non-standard or less common flavor categories"
 
-            # Generate UUID-based ID (E3)
             content_id = self._generate_uuid_id(task_type)
-
             question = {
                 "id": content_id,
                 "category": "E",
@@ -1125,7 +1214,9 @@ class QuestionGenerator:
                     "similar_group": similar_group,
                     "similar_parent": parent,
                     "odd_one": odd_one,
-                    "all_candidates": similar_group + [odd_one]
+                    "all_candidates": similar_group + [odd_one],
+                    "sibling_root": sibling_root,
+                    "odd_root": get_root(odd_one),
                 }
             }
 

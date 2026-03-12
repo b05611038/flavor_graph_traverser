@@ -152,13 +152,23 @@ def main():
     print(f"Exclusions: {len(exclude_set)} nodes ({len(tool_nodes)} tool + {len(exclude_set) - len(tool_nodes)} non-flavor)")
     print(f"Available: {available} descriptors")
 
-    # Load existing questions
+    # Load existing questions and inject audit status for the generator
     master_file = Path("data/questions/all_questions_system.json")
+    audit_state_file = Path("data/audit_results/audit_state.json")
     existing_questions = []
     if master_file.exists():
         with open(master_file) as f:
             master_data = json.load(f)
-        existing_questions = master_data.get('questions', [])
+        audit_state = {}
+        if audit_state_file.exists():
+            with open(audit_state_file) as f:
+                audit_state = json.load(f)
+        # Inject _audit_status so generator knows which questions are confirmed
+        existing_questions = []
+        for q in master_data.get('questions', []):
+            q = dict(q)
+            q['_audit_status'] = audit_state.get(q['id'], {}).get('status', 'pending')
+            existing_questions.append(q)
         print(f"Existing questions: {len(existing_questions)}")
 
     # Determine seed
