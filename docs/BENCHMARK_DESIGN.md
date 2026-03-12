@@ -51,10 +51,22 @@ Key comparisons:
 | Task | Format | Tests |
 |---|---|---|
 | **E1** Similarity Ranking | 4-choice: rank [A, B, C] by similarity to target | Graph distance ordering |
-| **E2** Pairwise Comparison | 2-choice: which of A or B is more similar to target? | Relative graph distance |
+| **E2** Pairwise Comparison | **3-choice**: which of A, B, or C is most similar to target? | Relative graph distance (random baseline 33%) |
 | **E3** Odd One Out | 4-choice: which does not belong with the others? | Cluster membership detection |
 
-**Constraint:** All E1/E2 candidates must share the same root category as the target (avoids ambiguous cross-branch distances through ROOT:SYSTEM at weight=10).
+**E2 constraints:**
+- All 3 options at strictly increasing graph distances from target
+- `min_closer_distance=2`: closest option must be at least distance 2 (prevents trivial parent/name matches)
+- Options must not share words with target (prevents name-matching shortcut)
+- All candidates must share the same root category as the target
+
+**E3 constraints:**
+- 3 siblings share the same direct parent; 1 odd-one from a different root category
+- No word shared across all 3 siblings (prevents trivial pattern detection)
+- No near-duplicate sibling names (normalized prefix check)
+- Odd-one must not share words with any sibling
+
+**All E1/E2 candidates must share the same root category as the target** (avoids ambiguous cross-branch distances through ROOT:SYSTEM at weight=10).
 
 **Target counts:** E1: 30, E2: 30, E3: 20
 
@@ -81,6 +93,21 @@ LLMs query the Tool Graph via function calling:
   ]
 }
 ```
+
+## Question Set Status
+
+| Task | Target | Confirmed | Format |
+|---|---|---|---|
+| A1 | 50 | 50 | Multi-select (0–N correct roots) |
+| A2 | 50 | 50 | Yes/No |
+| A3 | 30 | 30 | 4-choice single answer |
+| A4 | 30 | 30 | Multi-select paths (0–5 correct) |
+| A5 | 20 | 20 | 4-choice single answer |
+| E1 | 30 | 30 | 4-choice ranking |
+| E2 | 30 | 30 | 3-choice single answer |
+| E3 | 20 | 20 | 4-choice single answer |
+| F  | 15 | 0  | Open-ended (LLM-judged) |
+| **Total** | **275** | **260** | |
 
 ## Expected Results
 

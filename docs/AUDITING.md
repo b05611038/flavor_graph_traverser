@@ -124,7 +124,11 @@ lsof -ti:5000 | xargs kill -9
 bash scripts/start_auditor.sh
 ```
 
-**Changes not showing in browser:** Hard-refresh (Cmd+R).
+**Changes not showing in browser:** Hard-refresh (Cmd+Shift+R). If the queue order is wrong after `manage_queue.py prioritize`, a full auditor restart is more reliable than `/api/reload`:
+```bash
+pkill -f question_auditor_unified
+python scripts/question_auditor_unified.py
+```
 
 **Restore from backup:**
 ```bash

@@ -12,14 +12,24 @@ DescriptorSampler  →  QuestionGenerator  →  QuestionValidator
 ## Quick Start
 
 ```bash
-# Generate all questions (appends to existing, deduplicates by ID)
+# Generate all task types
 python scripts/generate_all_questions.py
+
+# Generate specific task type(s)
+python scripts/generate_all_questions.py E3
+python scripts/generate_all_questions.py E2 E3
+
+# Override count or seed
+python scripts/generate_all_questions.py E3 --count 200
+python scripts/generate_all_questions.py E2 --seed 999
 ```
 
 This automatically:
 - Loads all tool graph nodes as the exclusion set
 - Skips non-flavor categories (taste, baked)
+- Injects audit status (`confirmed`/`flagged`/`pending`) into existing questions so the generator avoids reusing confirmed descriptors
 - Appends new questions to `data/questions/all_questions_system.json`
+- Uses a time-based seed when generating specific task types (to get fresh results each run)
 
 ## Data Leakage Prevention
 
@@ -146,3 +156,17 @@ Every generated question passes through `QuestionValidator.validate()` which che
    - Exception: A4 (descriptor must appear in the path options)
 
 Task-specific logic for A1 (multi-label root validation) and A2 (ancestor relationship verification) is also enforced.
+
+## E3-Specific Quality Filters
+
+E3 generation applies extra filters beyond the standard validator to prevent trivially solvable questions:
+
+| Filter | Description |
+|---|---|
+| **Common root word** | Rejects sibling groups where any word (len≥3) appears as substring in all three siblings (e.g. `herb tea` / `vanilla herb` / `herbal tea` all contain "herb") |
+| **Near-duplicate** | Rejects sibling groups where any two names are normalized-prefix of each other (e.g. `redcurrant` vs `red currant jam`) |
+| **Root separation** | Odd-one must be from a strictly different root category than all three siblings |
+| **Word isolation** | Odd-one must not share any word with any sibling |
+| **Depth filter** | All nodes must have depth ≥ 2 from ROOT:SYSTEM (filters generic category names) |
+
+**E3 parent tracking:** Confirmed parent nodes are blocked from reuse. Flagged parent nodes are allowed to be retried with different sibling combinations.
