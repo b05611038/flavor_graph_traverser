@@ -104,11 +104,19 @@ data/backups/audit_state_N.json
 data/questions/all_questions_system.json.backup_YYYYMMDD_HHMMSS
 ```
 
+The version number in `backup_N.json` equals the confirmed question count at the time of backup. For example, `backup_98.json` was created when 98 questions were confirmed. Each backup includes a metadata header with confirmed counts by task type.
+
 **Manual backup:**
 ```bash
-python scripts/backup_manager.py backup   # create backup
-python scripts/backup_manager.py list     # list available backups
+python scripts/backup_manager.py backup      # create backup
+python scripts/backup_manager.py list        # list available backups
 python scripts/backup_manager.py restore 98  # restore to version with 98 confirmed
+```
+
+To add auto-backup to a script that modifies questions:
+```python
+from scripts.backup_manager import create_backup_if_needed
+create_backup_if_needed()  # runs once per day
 ```
 
 **What's NOT in git** (by design — too large/frequently changing):
