@@ -108,6 +108,61 @@ The gap between C0 and C3/C4 measures the **value of following the guide** over 
 
 ---
 
+## F Question Structure: Three Scenario Groups
+
+F questions are organized into 3 groups of 5 questions each (15 total). Each group shares a common reasoning structure, which reduces evaluation variance — the judge assesses 5 questions within a consistent scenario type rather than across unrelated contexts.
+
+The three groups are chosen to be structurally distinct: different user types, different reasoning directions, and different roles for the flavor hierarchy.
+
+---
+
+### Group 1: Communication / Translation (5 questions)
+
+**Context:** Coffee shop interactions between baristas and customers.
+
+**Reasoning structure:** Bidirectional translation between everyday informal language and the flavor hierarchy's technical vocabulary, at the appropriate level of specificity for the audience.
+
+**What this tests:** Whether the LLM can parse a customer's vague or cross-domain flavor expression (e.g., "something bright, not too bitter, like juice") into hierarchy-grounded descriptors — and conversely, explain a coffee's technical tasting notes in language a non-expert understands.
+
+**Why this is distinct:** The goal is not to make a recommendation or design a product. It is to communicate accurately across a vocabulary gap. The hierarchy determines what is accurate; the LLM determines what is accessible.
+
+**Example scenario direction:**
+> A customer says they enjoy "something that tastes like fruit tea — sweet but with a little edge." A barista needs to identify which region of the flavor wheel matches this description, and recommend a coffee using that vocabulary.
+
+---
+
+### Group 2: Preference-to-Product (5 questions)
+
+**Context:** A customer or buyer wants a specific flavor experience. The task is to navigate from that expressed preference through the hierarchy to a concrete recommendation or blend.
+
+**Reasoning structure:** Forward search — from a target flavor (possibly expressed in cross-domain terms) → locate it in the hierarchy → find available descriptors or combinations that approximate it → produce a reasoned recommendation.
+
+**What this tests:** Whether the LLM can use graph proximity and branch structure to find valid approximations when the exact target is unavailable, rather than improvising from intuition.
+
+**Why this is distinct:** The reasoning is constrained by availability (what coffees or descriptors exist) and requires graph traversal to find the closest valid path. Creative suggestions that bypass the hierarchy are the failure mode being tested against.
+
+**Example scenario direction:**
+> A customer wants a blend that evokes blueberry. No single-origin coffee in stock has an explicit blueberry descriptor. Using the flavor wheel, identify which available descriptors are closest in the hierarchy and could combine to approximate the target.
+
+---
+
+### Group 3: Production Factors → Flavor Outcomes (5 questions)
+
+**Context:** Coffee producers, roasters, and Q-graders reasoning about how upstream production decisions shape flavor outcomes.
+
+**Reasoning structure:** Causal reasoning from production variables (fermentation type/duration, roast profile) through the hierarchy to predicted or observed flavor positions — both forward (process → expected flavor shift) and diagnostic (unexpected flavor → likely production cause).
+
+**What this tests:** Whether the LLM can connect industry-standard production knowledge to specific positions in the flavor hierarchy, rather than giving vague associations ("natural process coffees are more fruity"). The hierarchy makes the reasoning precise and verifiable.
+
+**Why this is distinct:** The reasoning direction is bottom-up from raw material and process, not top-down from preference. The user type is a producer or roaster, not a consumer. The graph is used as a structured knowledge base about process-flavor relationships, not a recommendation engine.
+
+**Scope:** Fermentation (duration, aerobic/anaerobic/carbonic maceration, degree of fermentation) and roasting (roast level, development time ratio, roast curve shape) are the two production variables in scope. Varietal and terroir are excluded — their flavor effects are less systematically codified in the flavor wheel and harder to judge fairly.
+
+**Example scenario direction:**
+> A roaster extended the fermentation time on a natural-process lot and noticed an unexpected shift in the cup. Based on the flavor wheel, which branch is this shift most likely moving toward, and at what point does it cross from a positive characteristic into a defect signal?
+
+---
+
 ## Broader Implications
 
 The same design principle applies beyond coffee. Any domain with a codified, hierarchical standard — wine (sommelier wheel), beer (BJCP flavor guide), tea, perfumery — could benefit from this benchmark paradigm. The flavor hierarchy is a general instrument; the system is designed to be extensible to new domains by adding new graphs.
