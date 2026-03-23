@@ -74,14 +74,25 @@ Flavor descriptors are organized in a hierarchical graph structure
 
 **Target counts:** E1: 30, E2: 30, E3: 20
 
-### Category F: Open Reasoning
+### Category F: Open Reasoning (Professional Scenarios)
 
-LLM-judged questions with no single correct answer:
-- Describe the flavor profile of descriptor X
-- Explain the relationship between X and Y
-- Category overview questions
+LLM-judged open-ended questions requiring branch-level flavor hierarchy reasoning in realistic professional contexts. No single correct answer — scoring evaluates reasoning quality (0-5 scale).
 
-**Target count:** 15
+**Three scenario groups (5 questions each):**
+
+| Group | Context | Reasoning tested |
+|---|---|---|
+| **G1** Communication | Barista-customer interactions | Translate informal language ↔ hierarchy vocabulary |
+| **G2** Professional Decision-Making | Sourcing, blending, menu design | Branch reasoning for business decisions with practical constraints |
+| **G3** Production Factors | Roasting, fermentation, processing | Connect production variables to flavor hierarchy positions |
+
+**Key design principles:**
+- Buyer/owner language is indirect — requires branch mapping to interpret (no word matching)
+- Reference tables describe physical processes, not flavor outcomes
+- Multiple valid answers accepted if supported by branch reasoning
+- Scoring rubrics evaluate reasoning quality, not specific conclusions
+
+**Target count:** 16 (G1: 5, G2: 5, G3: 6 including 1 abandoned draft)
 **Judge model:** Claude Opus 4.5 (with system graph tool access)
 
 ## Tool Interface
@@ -148,8 +159,8 @@ patterns = [
 | E1 | 30 | 30 | 4-choice ranking |
 | E2 | 30 | 30 | 3-choice single answer |
 | E3 | 20 | 20 | 4-choice single answer |
-| F  | 15 | 0  | Open-ended (LLM-judged) |
-| **Total** | **275** | **260** | |
+| F  | 16 | 16 | Open-ended (LLM-judged, 0-5 scoring) |
+| **Total** | **276** | **276** | |
 
 ## Models
 
@@ -264,7 +275,7 @@ Jasmine's parent is floral. Therefore, I select (B).
 ## Budget Estimate
 
 ```
-Total runs: 275 questions × 4 conditions × 11 models = 12,100 runs
+Total runs: 276 questions × 4 conditions × 11 models = 12,144 runs
 Est. tokens/run: ~800 average
 Total tokens: ~9.7M
 

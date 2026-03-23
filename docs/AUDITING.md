@@ -93,36 +93,22 @@ The state manager uses file locking and atomic writes to prevent corruption.
 }
 ```
 
-## Backups
+## Data Storage
 
-Backups are created automatically after each confirmation (incremental) and at the start of each generation script run (timestamped).
+**What's NOT in git** (by design — contains question content that should not be public):
+- `data/questions/*.json` — question bank (all_questions_system.json)
+- `data/audit_results/*.json` — audit state
 
-**Backup locations:**
-```
-data/backups/backup_N.json          # N = confirmed count at time of backup
-data/backups/audit_state_N.json
-data/questions/all_questions_system.json.backup_YYYYMMDD_HHMMSS
-```
+**Canonical files:**
+- `data/questions/all_questions_system.json` — the single source of truth for all questions
+- `data/audit_results/audit_state.json` — audit status for each question
 
-The version number in `backup_N.json` equals the confirmed question count at the time of backup. For example, `backup_98.json` was created when 98 questions were confirmed. Each backup includes a metadata header with confirmed counts by task type.
-
-**Manual backup:**
+**Backups** are created by `scripts/backup_manager.py` if needed:
 ```bash
 python scripts/backup_manager.py backup      # create backup
 python scripts/backup_manager.py list        # list available backups
-python scripts/backup_manager.py restore 98  # restore to version with 98 confirmed
+python scripts/backup_manager.py restore N   # restore to version N
 ```
-
-To add auto-backup to a script that modifies questions:
-```python
-from scripts.backup_manager import create_backup_if_needed
-create_backup_if_needed()  # runs once per day
-```
-
-**What's NOT in git** (by design — too large/frequently changing):
-- `data/questions/*.json`
-- `data/audit_results/*.json`
-- Backup files
 
 ## Troubleshooting
 

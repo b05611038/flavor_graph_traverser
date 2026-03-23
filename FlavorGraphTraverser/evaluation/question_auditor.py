@@ -107,11 +107,11 @@ class QuestionAuditor:
             ID of duplicate question if found, None otherwise
         """
         question_text = question.get("text", "").lower().strip()
-        question_options = frozenset(question.get("options", {}).values())
+        question_options = frozenset((question.get("options") or {}).values())
 
         for confirmed in confirmed_questions:
             confirmed_text = confirmed.get("text", "").lower().strip()
-            confirmed_options = frozenset(confirmed.get("options", {}).values())
+            confirmed_options = frozenset((confirmed.get("options") or {}).values())
 
             # Check if text and options match
             if question_text == confirmed_text and question_options == confirmed_options:
@@ -144,7 +144,7 @@ def format_question_for_display(question: Dict) -> Dict[str, str]:
     objects = question.get("_objects", {})
 
     # Format options
-    options = question.get("options", {})
+    options = question.get("options") or {}
     options_text = "\n".join([f"  ({key}) {value}" for key, value in sorted(options.items())])
 
     # Get correct answer (handle both single-label and multi-label)
@@ -164,7 +164,9 @@ def format_question_for_display(question: Dict) -> Dict[str, str]:
         correct_text = options.get(correct_answer, "UNKNOWN")
 
     # Format what LLM sees (different for multi-label)
-    if answer_format == "multi_label":
+    if answer_format == "open":
+        llm_view = text
+    elif answer_format == "multi_label":
         llm_view = f"""{text}
 
 {options_text}
@@ -202,27 +204,79 @@ When providing your final answer, use this exact format:
     # Annotated view with template/objects highlighted
     annotated_parts = []
 
-    if template:
-        annotated_parts.append(f"📋 TEMPLATE:\n  {template}")
+    # F-category: open-ended with judging notes
+    evaluation = question.get("evaluation", {})
+    if category == "F" or (evaluation and evaluation.get("method") == "llm_judge"):
+        group = question.get("group", "")
+        group_index = question.get("group_index", "")
+        judging_notes = evaluation.get("judging_notes", {})
 
-    if objects:
-        annotated_parts.append(f"\n🎯 OBJECTS (from graph):")
-        for key, value in objects.items():
-            # Skip list values for cleaner display
-            if not isinstance(value, list):
-                annotated_parts.append(f"  {key} = '{value}'")
-            else:
-                annotated_parts.append(f"  {key} = {value}")
+        if group:
+            annotated_parts.append(f"📦 GROUP: {group}  (Q{group_index})")
 
-    annotated_parts.append(f"\n❓ FINAL QUESTION:\n  {text}")
-    annotated_parts.append(f"\n📝 OPTIONS:\n{options_text}")
+        # ── LLM-visible section ──
+        annotated_parts.append(f"\n👁️  VISIBLE TO LLM\n{'─' * 40}")
+        annotated_parts.append(f"{text}")
+        annotated_parts.append(f"{'─' * 40}")
 
-    # Format answer display based on type
-    if isinstance(correct_answer, list):
-        annotated_parts.append(f"\n✅ CORRECT ANSWERS: {correct_answer} → {correct_text}")
-        annotated_parts.append(f"   Format: Multi-label (select all that apply)")
+        # ── Judge-only section ──
+        annotated_parts.append(f"\n🔒 JUDGE / AUDITOR ONLY\n{'─' * 40}")
+
+        # Show coffees from _objects if present
+        coffees = objects.get("coffees", {})
+        if coffees:
+            annotated_parts.append(f"☕ COFFEES:")
+            for letter, descriptors in sorted(coffees.items()):
+                annotated_parts.append(f"  {letter}: {', '.join(descriptors)}")
+
+        best = objects.get("best_answers", [])
+        wrong = objects.get("clearly_wrong", [])
+        plausible = objects.get("plausible_wrong", [])
+        if best:
+            annotated_parts.append(f"\n✅ BEST ANSWERS: {best}")
+        if plausible:
+            annotated_parts.append(f"⚠️  PLAUSIBLE BUT WRONG: {plausible}")
+        if wrong:
+            annotated_parts.append(f"❌ CLEARLY WRONG: {wrong}")
+
+        if judging_notes:
+            annotated_parts.append(f"\n🧑‍⚖️ JUDGING NOTES:")
+            what = judging_notes.get("what_to_evaluate", "")
+            if what:
+                annotated_parts.append(f"  What to evaluate: {what}")
+            rubric = judging_notes.get("scoring_rubric", {})
+            if rubric:
+                annotated_parts.append(f"\n  Scoring rubric (0-5):")
+                for score in sorted(rubric.keys(), reverse=True):
+                    annotated_parts.append(f"    [{score}] {rubric[score]}")
+            judge_inst = judging_notes.get("judge_instructions", "")
+            if judge_inst:
+                annotated_parts.append(f"\n  Judge instructions: {judge_inst}")
+
+        judge_model = evaluation.get('judge_model')
+        judge_str = f" | Judge: {judge_model}" if judge_model else ""
+        annotated_parts.append(f"\n📊 Evaluation: {evaluation.get('method','?')}{judge_str} | Scoring: {evaluation.get('scoring','?')}")
+
     else:
-        annotated_parts.append(f"\n✅ CORRECT ANSWER: ({correct_answer}) {correct_text}")
+        if template:
+            annotated_parts.append(f"📋 TEMPLATE:\n  {template}")
+
+        if objects:
+            annotated_parts.append(f"\n🎯 OBJECTS (from graph):")
+            for key, value in objects.items():
+                if not isinstance(value, list):
+                    annotated_parts.append(f"  {key} = '{value}'")
+                else:
+                    annotated_parts.append(f"  {key} = {value}")
+
+        annotated_parts.append(f"\n❓ FINAL QUESTION:\n  {text}")
+        annotated_parts.append(f"\n📝 OPTIONS:\n{options_text}")
+
+        if isinstance(correct_answer, list):
+            annotated_parts.append(f"\n✅ CORRECT ANSWERS: {correct_answer} → {correct_text}")
+            annotated_parts.append(f"   Format: Multi-label (select all that apply)")
+        else:
+            annotated_parts.append(f"\n✅ CORRECT ANSWER: ({correct_answer}) {correct_text}")
 
     annotated_text = "\n".join(annotated_parts)
 

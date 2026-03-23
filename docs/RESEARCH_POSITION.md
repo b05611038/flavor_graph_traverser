@@ -114,6 +114,8 @@ F questions are organized into 3 groups of 5 questions each (15 total). Each gro
 
 The three groups are chosen to be structurally distinct: different user types, different reasoning directions, and different roles for the flavor hierarchy.
 
+All F questions use open-ended format, evaluated by LLM judge (0-5 scoring). Judging notes include branch reference mappings, what to evaluate, and scoring rubrics that assess reasoning quality rather than specific conclusions.
+
 ---
 
 ### Group 1: Communication / Translation (5 questions)
@@ -126,40 +128,60 @@ The three groups are chosen to be structurally distinct: different user types, d
 
 **Why this is distinct:** The goal is not to make a recommendation or design a product. It is to communicate accurately across a vocabulary gap. The hierarchy determines what is accurate; the LLM determines what is accessible.
 
-**Example scenario direction:**
-> A customer says they enjoy "something that tastes like fruit tea — sweet but with a little edge." A barista needs to identify which region of the flavor wheel matches this description, and recommend a coffee using that vocabulary.
+**Questions:** F_g1_q1 through F_g1_q5 (communication scenarios).
 
 ---
 
-### Group 2: Preference-to-Product (5 questions)
+### Group 2: Professional Decision-Making (5 questions)
 
-**Context:** A customer or buyer wants a specific flavor experience. The task is to navigate from that expressed preference through the hierarchy to a concrete recommendation or blend.
+**Context:** Coffee professionals (roasters, buyers, café managers) making decisions that require flavor hierarchy reasoning — sourcing, blending, menu design, and quality control.
 
-**Reasoning structure:** Forward search — from a target flavor (possibly expressed in cross-domain terms) → locate it in the hierarchy → find available descriptors or combinations that approximate it → produce a reasoned recommendation.
+**Reasoning structure:** Multi-step reasoning combining informal flavor language, cupping data, and practical constraints (volume, price, relationships) with branch-level analysis from the flavor hierarchy.
 
-**What this tests:** Whether the LLM can use graph proximity and branch structure to find valid approximations when the exact target is unavailable, rather than improvising from intuition.
+**What this tests:** Whether the LLM can connect buyer/owner requests (often in informal language) to specific hierarchy positions, then make decisions grounded in branch reasoning rather than surface-level word matching.
 
-**Why this is distinct:** The reasoning is constrained by availability (what coffees or descriptors exist) and requires graph traversal to find the closest valid path. Creative suggestions that bypass the hierarchy are the failure mode being tested against.
+**Why this is distinct:** Decisions have real-world consequences (business relationships, product quality). The LLM must balance flavor reasoning with practical constraints. No single correct answer — reasoning quality is what matters.
 
-**Example scenario direction:**
-> A customer wants a blend that evokes blueberry. No single-origin coffee in stock has an explicit blueberry descriptor. Using the flavor wheel, identify which available descriptors are closest in the hierarchy and could combine to approximate the target.
+**Questions:**
+
+| ID | Scenario | Key reasoning challenge |
+|---|---|---|
+| F_g2_q1_sourcing | Green coffee sourcing | Origin characteristics → hierarchy positioning |
+| F_g2_q2_blend_or_single | Blend vs. single-origin decision | Customer preference → product recommendation |
+| F_g2_q3_blend_evaluation | Blend quality evaluation | Cupping notes → branch analysis → quality assessment |
+| F_g2_q4_blend_design | Espresso blend design | Ambiguous components, no clean rejects, ratio reasoning. Target described without naming specific correct coffees. Rubric evaluates reasoning quality, not specific blend recipe. |
+| F_g2_q5_menu_curation | Café menu correction | Bottle matching (smell vs. menu, zero word overlap) + cross-branch mismatch detection (Kenya menu says sweet/berry, actual is citrus-dominant). Open-ended: "The café opens in an hour. What needs to be sorted out?" |
 
 ---
 
 ### Group 3: Production Factors → Flavor Outcomes (5 questions)
 
-**Context:** Coffee producers, roasters, and Q-graders reasoning about how upstream production decisions shape flavor outcomes.
+**Context:** Coffee producers, roasters, and processing station managers reasoning about how upstream production decisions shape flavor outcomes.
 
-**Reasoning structure:** Causal reasoning from production variables (fermentation type/duration, roast profile) through the hierarchy to predicted or observed flavor positions — both forward (process → expected flavor shift) and diagnostic (unexpected flavor → likely production cause).
+**Reasoning structure:** Causal reasoning from production variables (roast profile, fermentation duration, processing method, drying conditions) through the hierarchy to predicted or observed flavor positions — both forward (process → expected flavor shift) and diagnostic (unexpected flavor → likely production cause).
 
-**What this tests:** Whether the LLM can connect industry-standard production knowledge to specific positions in the flavor hierarchy, rather than giving vague associations ("natural process coffees are more fruity"). The hierarchy makes the reasoning precise and verifiable.
+**What this tests:** Whether the LLM can connect production knowledge to specific positions in the flavor hierarchy, rather than giving vague associations ("natural process coffees are more fruity"). The hierarchy makes the reasoning precise and verifiable.
 
 **Why this is distinct:** The reasoning direction is bottom-up from raw material and process, not top-down from preference. The user type is a producer or roaster, not a consumer. The graph is used as a structured knowledge base about process-flavor relationships, not a recommendation engine.
 
-**Scope:** Fermentation (duration, aerobic/anaerobic/carbonic maceration, degree of fermentation) and roasting (roast level, development time ratio, roast curve shape) are the two production variables in scope. Varietal and terroir are excluded — their flavor effects are less systematically codified in the flavor wheel and harder to judge fairly.
+**Scope:** Roasting (roast level, development time, rate of rise) and processing (fermentation duration, honey process levels, natural process, drying method) are the production variables in scope. Varietal and terroir are excluded — their flavor effects are less systematically codified in the flavor wheel and harder to judge fairly.
 
-**Example scenario direction:**
-> A roaster extended the fermentation time on a natural-process lot and noticed an unexpected shift in the cup. Based on the flavor wheel, which branch is this shift most likely moving toward, and at what point does it cross from a positive characteristic into a defect signal?
+**Design principles:**
+- Cupping descriptors never word-match reference tables — branch reasoning required
+- Processing/roast reference tables describe physical processes and general tendencies, not flavor outcomes
+- Buyer/owner language is indirect, requiring branch mapping to interpret
+- No single correct answer — scoring evaluates reasoning quality
+- Multiple valid approaches accepted if supported by branch reasoning
+
+**Questions:**
+
+| ID | Scenario | Key reasoning challenge |
+|---|---|---|
+| F_g3_q1_roast_defect | Roast defect diagnosis | Cupping notes → branch mapping → defect table (no adjustment column) → roast log analysis. Dual defect: underdeveloped (peapod/straw → green/vegetable) + baked (wheat → roasted/cereal, temperature stalled 196→197°C). Must propose executable adjustment. |
+| F_g3_q2_roast_comparison | Roast profile comparison | Two profiles (fast vs. slow) of same Peru lot. Owner says "lychee thing" — must map to apricot + chamomile through branches. Speed vs. endpoint as independent variables. Honest trade-off communication. |
+| F_g3_q3_fermentation_selection | Fermentation batch allocation | Four SIAF batches (0h, 24h, 48h, 72h) with distinct branch profiles. Two buyers use indirect flavor language ("warm, toasty depth" / "smoky-sweet, aged"). Both converge on Batch C. Volume + price + relationship tension. |
+| F_g3_q4_processing_track | Processing track decision | Rwanda washing station, 5 farmers' lots with cherry quality data + cupping history. 800 kg capacity constraint. Buyer wants "floral/juicy + more body and sweetness." Must predict blended product profiles, handle new farmer (no history), consider processing upgrade for borderline lot. |
+| F_g3_q5_honey_process | Processing method design | Costa Rica micro-mill with cupping records for washed, white honey, yellow honey, natural 24h, natural 48h. Reference table for all methods (physical description, general tendency — no flavor specifics). Buyer wants "peach compote not berry smoothie." Natural trap: natural has most fruit intensity but wrong sub-branch (berry, not stone fruit). Must extrapolate honey trajectory (citrus → stone fruit) and distinguish sub-branches. |
 
 ---
 
@@ -173,4 +195,4 @@ The central research claim is:
 
 ---
 
-*Written: 2026-03-13. Based on design discussions during benchmark development.*
+*Written: 2026-03-13. Updated: 2026-03-23. G2 and G3 questions finalized with detailed scenario designs.*

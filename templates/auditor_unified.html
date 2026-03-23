@@ -521,6 +521,10 @@
                         <option value="A3_sibling_identification">A3 - Sibling Identification</option>
                         <option value="A4">A4 - Path Reconstruction (Multi-select)</option>
                         <option value="A5_lca_finding">A5 - LCA Finding</option>
+                        <option value="E1_descriptor_classification">E1 - Descriptor Classification</option>
+                        <option value="E2_relative_proximity">E2 - Relative Proximity</option>
+                        <option value="E3_odd_one_out">E3 - Odd One Out</option>
+                        <option value="F_flavor_description">F - Flavor Description</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -774,8 +778,13 @@
 
             let html = '';
             for (const q of questions) {
-                // Extract first line from llm_view as the question text
-                const questionText = q.llm_view ? q.llm_view.split('\n')[0] : 'Question';
+                const bodyContent = q.annotated_view
+                    ? `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px; margin: 0;">${q.annotated_view}</pre>`
+                    : `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px; margin: 0;">${q.llm_view || ''}</pre>`;
+
+                const answerLine = (q.correct_answer !== null && q.correct_answer !== undefined)
+                    ? `<div style="margin-top: 10px; font-size: 14px; color: #6b7280;"><strong>Answer:</strong> (${q.correct_answer}) ${q.correct_text || q.correct_answer}</div>`
+                    : '';
 
                 html += `
                     <div class="question-card">
@@ -785,10 +794,8 @@
                                 <span class="badge badge-primary">${q.category}</span>
                             </div>
                         </div>
-                        <div class="question-text">${questionText}</div>
-                        <div style="margin-top: 10px; font-size: 14px; color: #6b7280;">
-                            <strong>Answer:</strong> (${q.correct_answer}) ${q.correct_text || q.correct_answer}
-                        </div>
+                        <div class="question-text">${bodyContent}</div>
+                        ${answerLine}
                     </div>
                 `;
             }
