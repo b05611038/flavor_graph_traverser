@@ -5,6 +5,7 @@ Evaluates a single question under a specific condition.
 Implements the turn-based evaluation loop from Implementation Guide.
 """
 
+import json
 import time
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -509,7 +510,6 @@ class QuestionEvaluator:
                         tool_args_str = tool_call.get("function", {}).get("arguments") or tool_call.get("arguments", "{}")
                         
                         # Parse arguments
-                        import json
                         try:
                             tool_args = json.loads(tool_args_str) if isinstance(tool_args_str, str) else tool_args_str
                         except:

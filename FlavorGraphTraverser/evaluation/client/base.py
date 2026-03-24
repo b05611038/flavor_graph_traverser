@@ -120,9 +120,16 @@ class BaseClient(ABC):
         """
         formatted = []
         for msg in messages:
-            msg_dict = {
+            # OpenAI spec: assistant messages with tool_calls require content=null
+            # (not empty string) when there is no text alongside the tool calls.
+            if msg.role == "assistant" and msg.tool_calls and not msg.content:
+                content = None
+            else:
+                content = msg.content
+
+            msg_dict: Dict[str, Any] = {
                 "role": msg.role,
-                "content": msg.content
+                "content": content,
             }
 
             # Add tool-specific fields if present
