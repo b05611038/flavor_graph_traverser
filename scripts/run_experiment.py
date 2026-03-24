@@ -84,7 +84,14 @@ def main():
     parser.add_argument(
         "--max-questions",
         type=int,
-        help="Maximum number of questions to evaluate (for testing)"
+        help="Maximum number of questions to evaluate (takes first N)"
+    )
+
+    parser.add_argument(
+        "--sample",
+        type=int,
+        metavar="N",
+        help="Sample N questions per task type for a representative smoke test"
     )
 
     parser.add_argument(
@@ -221,6 +228,8 @@ def main():
     print()
 
     # Create batch runner
+    if args.sample:
+        print(f"Sample mode: {args.sample} questions per task type")
     runner = BatchRunner(
         questions_file=questions_file,
         graph_file=args.graph,
@@ -228,6 +237,10 @@ def main():
         enable_cache=not args.no_cache,
         verbose=not args.quiet
     )
+
+    # Apply sampling if requested
+    if args.sample:
+        runner.sample_questions(args.sample)
 
     # Run experiment
     try:

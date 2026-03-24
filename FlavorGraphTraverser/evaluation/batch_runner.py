@@ -297,6 +297,13 @@ class BatchRunner:
                         completed += 1
                         continue
 
+                # Incremental save after each model×condition finishes
+                elapsed_so_far = time.time() - start_time
+                partial_summary = self._generate_summary(results, elapsed_so_far)
+                self._save_results(results, partial_summary)
+                if self.config.verbose:
+                    print(f"  ✓ Checkpoint saved ({len(results)} results so far)")
+
         # Calculate elapsed time
         elapsed = time.time() - start_time
 
@@ -306,13 +313,37 @@ class BatchRunner:
         if self.config.verbose:
             self._print_summary(summary)
 
-        # Save results
+        # Final save
         self._save_results(results, summary)
 
         return {
             "results": results,
             "summary": summary
         }
+
+    def sample_questions(self, n_per_type: int) -> None:
+        """
+        Reduce self.questions to at most n_per_type questions per task_type.
+        Picks evenly spaced entries so the sample spans the full list.
+        Modifies self.questions in-place.
+        """
+        from collections import defaultdict
+        buckets: Dict[str, list] = defaultdict(list)
+        for q in self.questions:
+            buckets[q.get("task_type", "unknown")].append(q)
+
+        sampled = []
+        for task_type, qs in sorted(buckets.items()):
+            if len(qs) <= n_per_type:
+                sampled.extend(qs)
+            else:
+                step = len(qs) / n_per_type
+                sampled.extend(qs[int(i * step)] for i in range(n_per_type))
+
+        self.questions = sampled
+        if self.config.verbose:
+            print(f"  Sampled {len(self.questions)} questions "
+                  f"({n_per_type} per task type, {len(buckets)} types)")
 
     def _is_cached(self, model: str, condition: str, question_id: str) -> bool:
         """Check if result is cached."""
