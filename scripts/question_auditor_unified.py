@@ -707,6 +707,7 @@ def get_results():
     all_task_types = sorted({r.get('task_type', '') for r in results})
 
     return jsonify({
+        'run_status': results_data.get('run_status', 'complete'),
         'results': rows,
         'total': total,
         'n_correct': n_correct,

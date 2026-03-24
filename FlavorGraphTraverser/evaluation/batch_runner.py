@@ -222,6 +222,9 @@ class BatchRunner:
             print(f"Total evaluations: {total}")
             print(f"{'='*70}\n")
 
+        # Write an initial "running" marker so the viewer knows the run started
+        self._save_results([], self._generate_summary([], 0), run_status="running")
+
         # Run evaluations
         completed = 0
         results = []
@@ -300,7 +303,7 @@ class BatchRunner:
                 # Incremental save after each model×condition finishes
                 elapsed_so_far = time.time() - start_time
                 partial_summary = self._generate_summary(results, elapsed_so_far)
-                self._save_results(results, partial_summary)
+                self._save_results(results, partial_summary, run_status="running")
                 if self.config.verbose:
                     print(f"  ✓ Checkpoint saved ({len(results)} results so far)")
 
@@ -313,8 +316,8 @@ class BatchRunner:
         if self.config.verbose:
             self._print_summary(summary)
 
-        # Final save
-        self._save_results(results, summary)
+        # Final save — mark as complete
+        self._save_results(results, summary, run_status="complete")
 
         return {
             "results": results,
@@ -546,19 +549,24 @@ class BatchRunner:
 
         print(f"{'='*70}\n")
 
-    def _save_results(self, results: List[EvaluationResult], summary: Dict[str, Any]):
-        """Save results to file."""
+    def _save_results(self, results: List[EvaluationResult], summary: Dict[str, Any],
+                      run_status: str = "complete"):
+        """Save results to file.
+
+        Args:
+            run_status: "running" (checkpoint), "complete", or "interrupted"
+        """
         output_dir = Path(self.config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save full results
         results_file = output_dir / "results.json"
         with open(results_file, 'w') as f:
             json.dump({
+                "run_status": run_status,
                 "metadata": self.metadata,
                 "summary": summary,
                 "results": [asdict(r) for r in results]
             }, f, indent=2)
 
-        if self.config.verbose:
+        if self.config.verbose and run_status == "complete":
             print(f"✓ Results saved to: {results_file}")

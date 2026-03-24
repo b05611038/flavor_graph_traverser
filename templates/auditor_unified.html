@@ -790,6 +790,7 @@
                     <input type="text" id="res-search" placeholder="e.g. A3_sibling...">
                 </div>
             </div>
+            <div id="results-status-banner" class="alert alert-warning hidden"></div>
             <div id="results-stats-bar" class="results-stats-bar"></div>
             <div id="results-list" class="results-list"></div>
         </div>
@@ -1127,6 +1128,23 @@
                         o.value = t; o.textContent = t;
                         taskSel.appendChild(o);
                     });
+                }
+            }
+
+            // Run status banner
+            const statusBanner = document.getElementById('results-status-banner');
+            if (statusBanner) {
+                const s = data.run_status || 'complete';
+                if (s === 'running') {
+                    statusBanner.innerHTML = '⏳ Run in progress — results are partial';
+                    statusBanner.className = 'alert alert-warning';
+                    statusBanner.classList.remove('hidden');
+                } else if (s === 'interrupted') {
+                    statusBanner.innerHTML = '⚠️ Run was interrupted — partial results only. Re-run to resume.';
+                    statusBanner.className = 'alert alert-warning';
+                    statusBanner.classList.remove('hidden');
+                } else {
+                    statusBanner.classList.add('hidden');
                 }
             }
 

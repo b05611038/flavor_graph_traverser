@@ -287,7 +287,20 @@ def main():
         print("="*70)
         print()
         print("Experiment interrupted by user.")
-        print("Partial results may be cached and will resume on next run.")
+        # Mark the last saved results.json as interrupted
+        import json as _json
+        results_path = Path(args.output) / "results.json"
+        if results_path.exists():
+            try:
+                with open(results_path) as _f:
+                    _data = _json.load(_f)
+                _data["run_status"] = "interrupted"
+                with open(results_path, "w") as _f:
+                    _json.dump(_data, _f, indent=2)
+                print(f"Partial results marked as interrupted: {results_path}")
+            except Exception:
+                pass
+        print("Re-run the same command to resume from cache.")
         print()
         return 130
 
