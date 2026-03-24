@@ -127,14 +127,21 @@ class BatchRunner:
         with open(questions_file, 'r') as f:
             data = json.load(f)
             if isinstance(data, dict) and "questions" in data:
-                self.questions = data["questions"]
+                all_questions = data["questions"]
                 self.metadata = data.get("metadata", {})
             else:
-                self.questions = data
+                all_questions = data
                 self.metadata = {}
 
+        # Exclude rejected questions
+        self.questions = [q for q in all_questions if q.get("status") != "rejected"]
+        n_rejected = len(all_questions) - len(self.questions)
+
         if self.config.verbose:
-            print(f"  Loaded {len(self.questions)} questions")
+            print(f"  Loaded {len(self.questions)} questions", end="")
+            if n_rejected:
+                print(f" ({n_rejected} rejected excluded)", end="")
+            print()
             print(f"  Graph: {len(self.graph.descriptions)} nodes")
 
         # Results cache
