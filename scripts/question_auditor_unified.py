@@ -39,6 +39,19 @@ questions_file = None
 skipped_questions = set()  # Track skipped questions in current session
 question_history = []  # Track question navigation history for "Previous" button
 
+# Results viewer state
+results_data = None  # Loaded results.json content
+results_file = None
+
+
+def load_results(file_path: str):
+    """Load evaluation results from JSON file."""
+    global results_data, results_file
+    results_file = file_path
+    with open(file_path, 'r') as f:
+        results_data = json.load(f)
+    return results_data
+
 # Path to the master questions file — single source of truth for valid question IDs
 MASTER_QUESTIONS_FILE = project_root / "data" / "questions" / "all_questions_system.json"
 
@@ -624,6 +637,118 @@ def prioritize_queue():
 
 
 # ============================================================================
+# Results Viewer Routes
+# ============================================================================
+
+@app.route('/results')
+def results_page():
+    """Results viewer page."""
+    return render_template('auditor_unified.html', mode='results')
+
+
+@app.route('/api/results')
+def get_results():
+    """Get evaluation results with optional filtering."""
+    if results_data is None:
+        return jsonify({"error": "No results file loaded. Start the server with --results <path>."}), 404
+
+    results = results_data.get("results", [])
+
+    # Apply filters
+    model_filter = request.args.get('model', '')
+    condition_filter = request.args.get('condition', '')
+    task_type_filter = request.args.get('task_type', '')
+    status_filter = request.args.get('status', '')  # correct / wrong / parse_error / api_error
+    search = request.args.get('search', '').lower()
+
+    filtered = results
+    if model_filter:
+        filtered = [r for r in filtered if r.get('model') == model_filter]
+    if condition_filter:
+        filtered = [r for r in filtered if r.get('condition') == condition_filter]
+    if task_type_filter:
+        filtered = [r for r in filtered if task_type_filter in r.get('task_type', '')]
+    if status_filter == 'correct':
+        filtered = [r for r in filtered if r.get('is_correct')]
+    elif status_filter == 'wrong':
+        filtered = [r for r in filtered if not r.get('is_correct') and r.get('status') == 'success']
+    elif status_filter in ('parse_error', 'api_error', 'tool_error'):
+        filtered = [r for r in filtered if r.get('status') == status_filter]
+    if search:
+        filtered = [r for r in filtered if search in r.get('question_id', '').lower()]
+
+    # Build summary rows (no conversation history — too large for list view)
+    rows = []
+    for r in filtered:
+        metrics = r.get('metrics', {})
+        rows.append({
+            'question_id': r.get('question_id'),
+            'model': r.get('model'),
+            'condition': r.get('condition'),
+            'task_type': r.get('task_type', ''),
+            'is_correct': r.get('is_correct'),
+            'status': r.get('status'),
+            'model_answer': r.get('model_answer'),
+            'correct_answer': r.get('correct_answer'),
+            'judge_score': r.get('judge_score'),
+            'reasoning_calls': metrics.get('reasoning_calls', 0),
+            'total_tokens': metrics.get('total_tokens', 0),
+            'latency_seconds': r.get('latency_seconds', 0),
+        })
+
+    # Compute quick stats over filtered set
+    total = len(rows)
+    n_correct = sum(1 for r in rows if r['is_correct'])
+    f_scores = [r['judge_score'] for r in rows if r['judge_score'] is not None]
+
+    # Enumerate unique models/conditions for filter dropdowns
+    all_models = sorted({r.get('model', '') for r in results})
+    all_conditions = sorted({r.get('condition', '') for r in results})
+    all_task_types = sorted({r.get('task_type', '') for r in results})
+
+    return jsonify({
+        'results': rows,
+        'total': total,
+        'n_correct': n_correct,
+        'accuracy': round(n_correct / total, 4) if total else 0,
+        'avg_judge_score': round(sum(f_scores) / len(f_scores), 2) if f_scores else None,
+        'filters': {
+            'models': all_models,
+            'conditions': all_conditions,
+            'task_types': all_task_types,
+        }
+    })
+
+
+@app.route('/api/results/summary')
+def get_results_summary():
+    """Get full summary statistics from results file."""
+    if results_data is None:
+        return jsonify({"error": "No results file loaded."}), 404
+    return jsonify(results_data.get('summary', {}))
+
+
+@app.route('/api/results/<path:question_id>')
+def get_result_detail(question_id):
+    """Get full result detail including conversation history."""
+    if results_data is None:
+        return jsonify({"error": "No results file loaded."}), 404
+
+    model = request.args.get('model', '')
+    condition = request.args.get('condition', '')
+
+    for r in results_data.get('results', []):
+        if r.get('question_id') == question_id:
+            if model and r.get('model') != model:
+                continue
+            if condition and r.get('condition') != condition:
+                continue
+            return jsonify(r)
+
+    return jsonify({"error": f"Result not found: {question_id}"}), 404
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -632,10 +757,19 @@ def main():
     global auditor
 
     # Parse arguments
-    if len(sys.argv) > 1:
-        questions_path = sys.argv[1]
-    else:
-        questions_path = "data/questions/all_questions_system.json"
+    questions_path = "data/questions/all_questions_system.json"
+    results_path = None
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == '--results' and i + 1 < len(args):
+            results_path = args[i + 1]
+            i += 2
+        elif not args[i].startswith('--'):
+            questions_path = args[i]
+            i += 1
+        else:
+            i += 1
 
     print(f"Loading questions from: {questions_path}")
 
@@ -654,13 +788,25 @@ def main():
     print(f"  Pending: {len(all_questions) - stats['total_reviewed']}")
     print()
 
+    # Load results if provided
+    if results_path:
+        try:
+            load_results(results_path)
+            n_results = len(results_data.get('results', []))
+            print(f"Loaded {n_results} evaluation results from: {results_path}")
+        except Exception as e:
+            print(f"Warning: Could not load results file: {e}")
+    print()
+
     print("=" * 70)
     print("🔍 Unified Question Auditor")
     print("=" * 70)
     print()
     print("Open in browser:")
-    print("  Audit mode:  http://localhost:5000/audit")
-    print("  Review mode: http://localhost:5000/review")
+    print("  Audit mode:   http://localhost:5000/audit")
+    print("  Review mode:  http://localhost:5000/review")
+    if results_path:
+        print("  Results mode: http://localhost:5000/results")
     print()
     print("Press Ctrl+C to stop")
     print("=" * 70)

@@ -445,6 +445,250 @@
         .btn-cancel:hover {
             background: #6b7280;
         }
+
+        /* Results Mode Styles */
+        .results-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 6px;
+        }
+
+        .results-filters .filter-group {
+            flex: 1;
+            min-width: 140px;
+        }
+
+        .results-stats-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .results-stats-bar span {
+            background: #e5e7eb;
+            padding: 4px 12px;
+            border-radius: 12px;
+        }
+
+        .results-stats-bar span.highlight {
+            background: #dbeafe;
+            color: #1e40af;
+            font-weight: 600;
+        }
+
+        .results-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .result-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 13px;
+        }
+
+        .result-row:hover {
+            background: #f0f9ff;
+            border-color: #93c5fd;
+        }
+
+        .result-row .verdict {
+            width: 22px;
+            text-align: center;
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+
+        .result-row .qid {
+            flex: 1;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #374151;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .result-row .meta {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .badge-condition {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+
+        .badge-correct {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-wrong {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-error {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        /* Conversation Detail Modal */
+        .conv-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+            overflow-y: auto;
+            padding: 30px 20px;
+        }
+
+        .conv-modal.active {
+            display: block;
+        }
+
+        .conv-modal-inner {
+            max-width: 860px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .conv-modal-header {
+            background: #1f2937;
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .conv-modal-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .conv-modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 4px;
+            line-height: 1;
+        }
+
+        .conv-modal-body {
+            padding: 20px;
+        }
+
+        .conv-verdict {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .conv-verdict.correct {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .conv-verdict.wrong {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .conv-verdict.error {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .turn {
+            margin-bottom: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }
+
+        .turn-header {
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .turn-body {
+            padding: 12px;
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .turn.system .turn-header { background: #f3f4f6; color: #6b7280; }
+        .turn.system .turn-body   { background: #fafafa; color: #6b7280; }
+
+        .turn.user .turn-header { background: #dbeafe; color: #1e40af; }
+        .turn.user .turn-body   { background: #eff6ff; color: #1e3a8a; }
+
+        .turn.assistant .turn-header { background: #d1fae5; color: #065f46; }
+        .turn.assistant .turn-body   { background: #f0fdf4; color: #064e3b; }
+
+        .turn.tool .turn-header { background: #fde68a; color: #78350f; }
+        .turn.tool .turn-body   { background: #fffbeb; color: #451a03; font-family: 'Courier New', monospace; font-size: 12px; }
+
+        .thinking-block {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-left: 3px solid #cbd5e1;
+            color: #64748b;
+            font-size: 12px;
+            font-style: italic;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .thinking-toggle {
+            cursor: pointer;
+            font-size: 11px;
+            color: #94a3b8;
+            user-select: none;
+        }
+
+        .tool-call-block {
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: #fef9c3;
+            border: 1px solid #fde047;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #713f12;
+        }
     </style>
 </head>
 <body>
@@ -471,6 +715,7 @@
             <ul class="nav-links">
                 <li><a href="/audit" class="nav-link" id="nav-audit">Audit</a></li>
                 <li><a href="/review" class="nav-link" id="nav-review">Review</a></li>
+                <li><a href="/results" class="nav-link" id="nav-results">Results</a></li>
             </ul>
         </div>
     </nav>
@@ -506,6 +751,57 @@
         <div class="content" id="audit-mode">
             <div id="question-container">
                 <!-- Question will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Results Mode Content -->
+        <div class="content hidden" id="results-mode">
+            <div class="results-filters">
+                <div class="filter-group">
+                    <label>Model</label>
+                    <select id="res-model-filter"><option value="">All Models</option></select>
+                </div>
+                <div class="filter-group">
+                    <label>Condition</label>
+                    <select id="res-condition-filter">
+                        <option value="">All</option>
+                        <option value="C0">C0 – Zero-shot</option>
+                        <option value="C1">C1 – CoT</option>
+                        <option value="C2">C2 – Tools</option>
+                        <option value="C3">C3 – CoT+Tools</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Task Type</label>
+                    <select id="res-task-filter"><option value="">All</option></select>
+                </div>
+                <div class="filter-group">
+                    <label>Verdict</label>
+                    <select id="res-status-filter">
+                        <option value="">All</option>
+                        <option value="correct">Correct</option>
+                        <option value="wrong">Wrong</option>
+                        <option value="parse_error">Parse Error</option>
+                        <option value="api_error">API Error</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Search ID</label>
+                    <input type="text" id="res-search" placeholder="e.g. A3_sibling...">
+                </div>
+            </div>
+            <div id="results-stats-bar" class="results-stats-bar"></div>
+            <div id="results-list" class="results-list"></div>
+        </div>
+
+        <!-- Conversation Detail Modal -->
+        <div id="conv-modal" class="conv-modal">
+            <div class="conv-modal-inner">
+                <div class="conv-modal-header">
+                    <h3 id="conv-modal-title">Conversation</h3>
+                    <button class="conv-modal-close" onclick="closeConvModal()">✕</button>
+                </div>
+                <div class="conv-modal-body" id="conv-modal-body"></div>
             </div>
         </div>
 
@@ -548,29 +844,38 @@
             if (MODE === 'audit') {
                 document.getElementById('nav-audit').classList.add('active');
                 document.getElementById('page-title').textContent = 'Question Auditor';
-            } else {
+            } else if (MODE === 'review') {
                 document.getElementById('nav-review').classList.add('active');
                 document.getElementById('page-title').textContent = 'Review Confirmed Questions';
+            } else if (MODE === 'results') {
+                document.getElementById('nav-results').classList.add('active');
+                document.getElementById('page-title').textContent = 'Evaluation Results';
             }
 
             // Load appropriate content
-            loadStats();
-            if (MODE === 'audit') {
-                showAuditMode();
+            if (MODE === 'results') {
+                showResultsMode();
             } else {
-                showReviewMode();
+                loadStats();
+                if (MODE === 'audit') {
+                    showAuditMode();
+                } else {
+                    showReviewMode();
+                }
             }
         });
 
         function showAuditMode() {
             document.getElementById('audit-mode').classList.remove('hidden');
             document.getElementById('review-mode').classList.add('hidden');
+            document.getElementById('results-mode').classList.add('hidden');
             loadNextQuestion();
         }
 
         function showReviewMode() {
             document.getElementById('audit-mode').classList.add('hidden');
             document.getElementById('review-mode').classList.remove('hidden');
+            document.getElementById('results-mode').classList.add('hidden');
             loadConfirmedQuestions();
 
             // Add filter listeners
@@ -767,6 +1072,215 @@
 
             renderConfirmedQuestions(data.questions);
         }
+
+        // ================================================================
+        // Results Mode
+        // ================================================================
+
+        function showResultsMode() {
+            document.getElementById('audit-mode').classList.add('hidden');
+            document.getElementById('review-mode').classList.add('hidden');
+            document.getElementById('results-mode').classList.remove('hidden');
+
+            // Hook up filter listeners
+            ['res-model-filter','res-condition-filter','res-task-filter',
+             'res-status-filter','res-search'].forEach(id => {
+                const el = document.getElementById(id);
+                el.addEventListener('change', loadResults);
+                el.addEventListener('input', loadResults);
+            });
+
+            loadResults();
+        }
+
+        async function loadResults() {
+            const model     = document.getElementById('res-model-filter').value;
+            const condition = document.getElementById('res-condition-filter').value;
+            const taskType  = document.getElementById('res-task-filter').value;
+            const status    = document.getElementById('res-status-filter').value;
+            const search    = document.getElementById('res-search').value;
+
+            const params = new URLSearchParams({model, condition, task_type: taskType, status, search});
+            const resp = await fetch('/api/results?' + params);
+            const data = await resp.json();
+
+            if (data.error) {
+                document.getElementById('results-list').innerHTML =
+                    `<div class="done-message"><h2>⚠️ ${data.error}</h2></div>`;
+                return;
+            }
+
+            // Populate filter dropdowns on first load
+            if (model === '' && condition === '' && taskType === '' && status === '' && search === '') {
+                const modelSel = document.getElementById('res-model-filter');
+                if (modelSel.options.length === 1) {
+                    data.filters.models.forEach(m => {
+                        const o = document.createElement('option');
+                        o.value = m; o.textContent = m;
+                        modelSel.appendChild(o);
+                    });
+                }
+                const taskSel = document.getElementById('res-task-filter');
+                if (taskSel.options.length === 1) {
+                    data.filters.task_types.forEach(t => {
+                        const o = document.createElement('option');
+                        o.value = t; o.textContent = t;
+                        taskSel.appendChild(o);
+                    });
+                }
+            }
+
+            // Stats bar
+            const acc = data.total > 0 ? (data.accuracy * 100).toFixed(1) + '%' : 'N/A';
+            const judgeStr = data.avg_judge_score !== null
+                ? `Avg Judge: ${data.avg_judge_score}/5` : '';
+            document.getElementById('results-stats-bar').innerHTML = `
+                <span>${data.total} results</span>
+                <span class="highlight">Accuracy: ${acc}</span>
+                ${judgeStr ? `<span>${judgeStr}</span>` : ''}
+            `;
+
+            // Render list
+            if (data.results.length === 0) {
+                document.getElementById('results-list').innerHTML =
+                    '<div class="done-message"><h2>No results match filters</h2></div>';
+                return;
+            }
+
+            let html = '';
+            for (const r of data.results) {
+                const verdict = r.is_correct ? '✓' : (r.status === 'success' ? '✗' : '⚠');
+                const vClass  = r.is_correct ? 'correct' : (r.status === 'success' ? 'wrong' : 'error');
+                const judgeTag = r.judge_score !== null
+                    ? `<span class="badge badge-primary">${r.judge_score}/5</span>` : '';
+                const toolTag = r.reasoning_calls > 0
+                    ? `<span class="badge badge-warning">${r.reasoning_calls} calls</span>` : '';
+
+                html += `
+                    <div class="result-row" onclick="openConvModal('${r.question_id}','${r.model}','${r.condition}')">
+                        <span class="verdict" style="color:${r.is_correct ? '#16a34a' : r.status==='success'?'#dc2626':'#d97706'}">${verdict}</span>
+                        <span class="qid">${r.question_id}</span>
+                        <div class="meta">
+                            <span class="badge badge-primary">${r.task_type || ''}</span>
+                            <span class="badge badge-condition">${r.condition}</span>
+                            <span class="badge ${vClass==='correct'?'badge-correct':vClass==='wrong'?'badge-wrong':'badge-warning'}">${r.status}</span>
+                            ${judgeTag}
+                            ${toolTag}
+                        </div>
+                        <span style="font-size:11px;color:#9ca3af;flex-shrink:0">${r.model.split('/').pop()}</span>
+                    </div>
+                `;
+            }
+            document.getElementById('results-list').innerHTML = html;
+        }
+
+        async function openConvModal(questionId, model, condition) {
+            const params = new URLSearchParams({model, condition});
+            const resp = await fetch(`/api/results/${encodeURIComponent(questionId)}?${params}`);
+            const r = await resp.json();
+
+            if (r.error) { alert(r.error); return; }
+
+            const verdict = r.is_correct ? '✓ Correct' : (r.status === 'success' ? '✗ Wrong' : `⚠ ${r.status}`);
+            const vClass  = r.is_correct ? 'correct' : (r.status === 'success' ? 'wrong' : 'error');
+            const answerStr = Array.isArray(r.model_answer) ? r.model_answer.join(', ') : (r.model_answer || 'none');
+            const correctStr = Array.isArray(r.correct_answer) ? r.correct_answer.join(', ') : (r.correct_answer || '?');
+            const judgeStr = r.judge_score !== null ? ` · Judge: ${r.judge_score}/5` : '';
+
+            let body = `
+                <div class="conv-verdict ${vClass}">
+                    ${verdict} · Model: ${answerStr} · Correct: ${correctStr}${judgeStr}
+                </div>
+            `;
+
+            // Conversation turns
+            for (const msg of (r.conversation_history || [])) {
+                const role = msg.role || 'unknown';
+                let label = role.toUpperCase();
+                if (role === 'tool') label = `TOOL: ${msg.name || ''}`;
+
+                // Content
+                let content = msg.content || '';
+
+                // Render tool calls inline in assistant messages
+                let toolCallsHtml = '';
+                if (msg.tool_calls && msg.tool_calls.length > 0) {
+                    for (const tc of msg.tool_calls) {
+                        const fn = tc.function || tc;
+                        const name = fn.name || tc.name || '';
+                        const args = fn.arguments || tc.arguments || '{}';
+                        toolCallsHtml += `<div class="tool-call-block">🔧 ${name}(${args})</div>`;
+                    }
+                }
+
+                // Thinking content (collapsible)
+                let thinkingHtml = '';
+                if (msg.thinking_content) {
+                    const tid = 'think_' + Math.random().toString(36).slice(2);
+                    thinkingHtml = `
+                        <div class="thinking-toggle" onclick="toggleThinking('${tid}')">▸ thinking (click to expand)</div>
+                        <div id="${tid}" class="thinking-block" style="display:none">${escHtml(msg.thinking_content)}</div>
+                    `;
+                }
+
+                body += `
+                    <div class="turn ${role}">
+                        <div class="turn-header">${label}</div>
+                        <div class="turn-body">${escHtml(content)}${toolCallsHtml}${thinkingHtml}</div>
+                    </div>
+                `;
+            }
+
+            // F-category: show judge response
+            if (r.judge_result && r.judge_result.judge_response) {
+                body += `
+                    <div class="turn tool">
+                        <div class="turn-header">JUDGE RESPONSE</div>
+                        <div class="turn-body">${escHtml(r.judge_result.judge_response)}</div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('conv-modal-title').textContent =
+                `${questionId} · ${model.split('/').pop()} · ${condition}`;
+            document.getElementById('conv-modal-body').innerHTML = body;
+            document.getElementById('conv-modal').classList.add('active');
+        }
+
+        function closeConvModal() {
+            document.getElementById('conv-modal').classList.remove('active');
+        }
+
+        // Close modal on backdrop click
+        document.addEventListener('click', e => {
+            const modal = document.getElementById('conv-modal');
+            if (e.target === modal) closeConvModal();
+        });
+
+        function toggleThinking(id) {
+            const el = document.getElementById(id);
+            const toggle = el.previousElementSibling;
+            if (el.style.display === 'none') {
+                el.style.display = 'block';
+                toggle.textContent = toggle.textContent.replace('▸', '▾').replace('expand', 'collapse');
+            } else {
+                el.style.display = 'none';
+                toggle.textContent = toggle.textContent.replace('▾', '▸').replace('collapse', 'expand');
+            }
+        }
+
+        function escHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // ================================================================
+        // Review Mode (existing)
+        // ================================================================
 
         function renderConfirmedQuestions(questions) {
             const container = document.getElementById('review-container');
