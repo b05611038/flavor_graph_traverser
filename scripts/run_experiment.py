@@ -20,6 +20,7 @@ Usage:
 
 import sys
 import argparse
+import yaml
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -32,7 +33,7 @@ def main():
 
     parser.add_argument(
         "--questions",
-        default="data/questions/all_questions.json",
+        default="data/questions/all_questions_system.json",
         help="Path to questions JSON file"
     )
 
@@ -90,6 +91,18 @@ def main():
         "--no-cache",
         action="store_true",
         help="Disable caching"
+    )
+
+    parser.add_argument(
+        "--models-config",
+        default="configs/models.yaml",
+        help="Path to models config YAML (for tool_mode and judge settings)"
+    )
+
+    parser.add_argument(
+        "--no-judge",
+        action="store_true",
+        help="Disable LLM judge for F-category questions"
     )
 
     parser.add_argument(
@@ -177,6 +190,32 @@ def main():
         print(f"Estimated time: {est_total_time/60:.1f} minutes")
         print(f"Estimated cost: ${est_total_cost:.2f} (API)")
 
+    # Load models config to extract tool_modes and judge settings
+    tool_modes = {}
+    judge_model = None
+    judge_client_type = None
+    if Path(args.models_config).exists():
+        with open(args.models_config) as f:
+            models_cfg = yaml.safe_load(f)
+
+        # Collect tool_mode overrides (default is "native")
+        for section in ("closed_source", "open_source", "local"):
+            for entry in models_cfg.get(section, []):
+                if entry.get("tool_mode") == "icl":
+                    tool_modes[entry["id"]] = "icl"
+
+        # Judge config (only for OpenRouter; skip for local Ollama runs)
+        if not args.no_judge and args.client == "openrouter":
+            judge_cfg = models_cfg.get("judge", {})
+            judge_model = judge_cfg.get("id")
+            judge_client_type = "openrouter"
+
+    if tool_modes:
+        icl_models = [k for k, v in tool_modes.items() if v == "icl"]
+        print(f"ICL tool mode: {', '.join(icl_models)}")
+    if judge_model:
+        print(f"Judge model: {judge_model}")
+
     print()
     input("Press Enter to continue or Ctrl+C to cancel...")
     print()
@@ -197,7 +236,11 @@ def main():
             conditions=args.conditions,
             client_type=args.client,
             base_url=args.base_url,
-            api_key=args.api_key
+            api_key=args.api_key,
+            judge_model=judge_model,
+            judge_client_type=judge_client_type,
+            judge_api_key=args.api_key,
+            tool_modes=tool_modes or None,
         )
 
         print()
