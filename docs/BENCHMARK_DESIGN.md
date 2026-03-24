@@ -171,9 +171,9 @@ patterns = [
 | Anthropic | Claude Sonnet 4.5 | `anthropic/claude-sonnet-4.5` |
 | OpenAI | GPT-5.2 | `openai/gpt-5.2` |
 | Google | Gemini 3 Flash | `google/gemini-3-flash-preview` |
-| xAI | Grok 4.1 Fast | `xai/grok-4-1-fast` |
+| xAI | Grok 4.1 Fast | `x-ai/grok-4.1-fast` |
 | OpenAI | GPT-OSS 120B | `openai/gpt-oss-120b` |
-| Alibaba | Qwen3-235B-A22B | `qwen/qwen3-235b-a22b-instruct` |
+| Alibaba | Qwen3-235B-A22B | `qwen/qwen3-235b-a22b` |
 | Moonshot | Kimi K2 | `moonshotai/kimi-k2` |
 | Meta | Llama 4 Maverick | `meta-llama/llama-4-maverick` |
 | DeepSeek | DeepSeek Chat | `deepseek/deepseek-chat` |

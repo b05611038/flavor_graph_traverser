@@ -148,7 +148,11 @@ class BatchRunner:
         conditions: List[str],
         client_type: str = "ollama",
         base_url: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        judge_model: Optional[str] = None,
+        judge_client_type: Optional[str] = None,
+        judge_api_key: Optional[str] = None,
+        tool_modes: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Run batch evaluation.
@@ -159,6 +163,14 @@ class BatchRunner:
             client_type: Client type ("ollama" or "openrouter")
             base_url: Base URL for client (optional)
             api_key: API key for client (optional)
+            judge_model: Model ID for F-category judge (e.g., "anthropic/claude-opus-4-5").
+                         If None, F-category questions are evaluated but not judged.
+            judge_client_type: Client type for judge (defaults to client_type if None)
+            judge_api_key: API key for judge client (defaults to api_key if None)
+            tool_modes: Optional dict mapping model_id -> "native" or "icl".
+                        "icl" uses text-based tool simulation for models without
+                        native function calling support. Defaults to "native" for
+                        any model not listed.
 
         Returns:
             Dict with results and summary statistics
@@ -167,10 +179,28 @@ class BatchRunner:
             >>> results = runner.run(
             ...     models=["tinyllama"],
             ...     conditions=["C0", "C2"],
-            ...     client_type="ollama"
+            ...     client_type="ollama",
+            ...     judge_model="anthropic/claude-opus-4-5",
+            ...     judge_client_type="openrouter",
+            ...     judge_api_key=os.getenv("OPENROUTER_API_KEY"),
             ... )
         """
         start_time = time.time()
+
+        # Build judge client (shared across all models/conditions)
+        judge_client = None
+        if judge_model:
+            try:
+                judge_client = create_client(
+                    client_type=judge_client_type or client_type,
+                    model=judge_model,
+                    api_key=judge_api_key or api_key,
+                )
+                if self.config.verbose:
+                    print(f"Judge: {judge_model}")
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"⚠ Failed to create judge client: {e}. F-category questions will not be judged.")
 
         # Calculate total evaluations
         total = len(self.questions) * len(models) * len(conditions)
@@ -210,8 +240,15 @@ class BatchRunner:
                 if self.config.verbose:
                     print(f"\n  Condition: {condition}")
 
-                # Create evaluator
-                evaluator = QuestionEvaluator(client, self.executor, condition)
+                # Determine tool mode for this model
+                tool_mode = (tool_modes or {}).get(model, "native")
+
+                # Create evaluator (with optional judge for F-category)
+                evaluator = QuestionEvaluator(
+                    client, self.executor, condition,
+                    judge_client=judge_client,
+                    tool_mode=tool_mode,
+                )
 
                 for i, question in enumerate(self.questions, 1):
                     question_id = question.get("id", f"Q{i}")
@@ -305,7 +342,11 @@ class BatchRunner:
                 conversation_history=cached_data.get("conversation_history", []),
                 parse_result=cached_data.get("parse_result"),
                 errors=cached_data.get("errors", []),
-                timestamp=cached_data.get("timestamp", "")
+                timestamp=cached_data.get("timestamp", ""),
+                task_type=cached_data.get("task_type", ""),
+                model_response_text=cached_data.get("model_response_text"),
+                judge_score=cached_data.get("judge_score"),
+                judge_result=cached_data.get("judge_result"),
             )
             return result
 
@@ -358,11 +399,14 @@ class BatchRunner:
         by_model_condition = defaultdict(list)
         by_model = defaultdict(list)
         by_condition = defaultdict(list)
+        by_task_type = defaultdict(list)
 
         for result in results:
             by_model_condition[(result.model, result.condition)].append(result)
             by_model[result.model].append(result)
             by_condition[result.condition].append(result)
+            if result.task_type:
+                by_task_type[result.task_type].append(result)
 
         # Calculate accuracy
         def calc_accuracy(results_list):
@@ -371,37 +415,62 @@ class BatchRunner:
             correct = sum(1 for r in results_list if r.is_correct)
             return correct / len(results_list)
 
+        def calc_avg_judge_score(results_list):
+            scored = [r.judge_score for r in results_list if r.judge_score is not None]
+            return sum(scored) / len(scored) if scored else None
+
         summary = {
             "total_evaluations": len(results),
             "elapsed_seconds": elapsed,
             "by_model_condition": {},
             "by_model": {},
             "by_condition": {},
-            "overall_accuracy": calc_accuracy(results)
+            "by_task_type": {},
+            "overall_accuracy": calc_accuracy(results),
         }
+
+        # Separate F-category results for avg score reporting
+        f_results = [r for r in results if r.judge_score is not None]
+        if f_results:
+            summary["f_category_avg_score"] = calc_avg_judge_score(f_results)
+            summary["f_category_count"] = len(f_results)
 
         # By model and condition
         for (model, condition), res_list in by_model_condition.items():
-            summary["by_model_condition"][f"{model}_{condition}"] = {
+            entry = {
                 "count": len(res_list),
                 "accuracy": calc_accuracy(res_list),
                 "avg_tokens": sum(r.metrics.total_tokens for r in res_list) / len(res_list),
                 "avg_latency_ms": sum(r.metrics.latency_ms for r in res_list) / len(res_list),
             }
+            avg_score = calc_avg_judge_score(res_list)
+            if avg_score is not None:
+                entry["f_avg_judge_score"] = avg_score
+            summary["by_model_condition"][f"{model}_{condition}"] = entry
 
         # By model
         for model, res_list in by_model.items():
-            summary["by_model"][model] = {
-                "count": len(res_list),
-                "accuracy": calc_accuracy(res_list)
-            }
+            entry = {"count": len(res_list), "accuracy": calc_accuracy(res_list)}
+            avg_score = calc_avg_judge_score(res_list)
+            if avg_score is not None:
+                entry["f_avg_judge_score"] = avg_score
+            summary["by_model"][model] = entry
 
         # By condition
         for condition, res_list in by_condition.items():
-            summary["by_condition"][condition] = {
-                "count": len(res_list),
-                "accuracy": calc_accuracy(res_list)
-            }
+            entry = {"count": len(res_list), "accuracy": calc_accuracy(res_list)}
+            avg_score = calc_avg_judge_score(res_list)
+            if avg_score is not None:
+                entry["f_avg_judge_score"] = avg_score
+            summary["by_condition"][condition] = entry
+
+        # By task type (Table 2 in paper)
+        for task_type, res_list in sorted(by_task_type.items()):
+            entry = {"count": len(res_list), "accuracy": calc_accuracy(res_list)}
+            avg_score = calc_avg_judge_score(res_list)
+            if avg_score is not None:
+                entry["avg_judge_score"] = avg_score
+            summary["by_task_type"][task_type] = entry
 
         return summary
 
@@ -414,9 +483,22 @@ class BatchRunner:
         print(f"Elapsed time: {summary['elapsed_seconds']:.1f}s")
         print(f"Overall accuracy: {summary['overall_accuracy']:.1%}")
 
+        if "f_category_avg_score" in summary:
+            print(f"F-category avg judge score: {summary['f_category_avg_score']:.2f}/5 "
+                  f"({summary['f_category_count']} questions)")
+
         print(f"\nBy Condition:")
         for condition, stats in summary.get("by_condition", {}).items():
-            print(f"  {condition}: {stats['accuracy']:.1%} ({stats['count']} questions)")
+            extra = f" | F avg: {stats['f_avg_judge_score']:.2f}/5" if "f_avg_judge_score" in stats else ""
+            print(f"  {condition}: {stats['accuracy']:.1%} ({stats['count']} questions){extra}")
+
+        print(f"\nBy Task Type:")
+        for task_type, stats in summary.get("by_task_type", {}).items():
+            if "avg_judge_score" in stats:
+                extra = f" | avg score: {stats['avg_judge_score']:.2f}/5"
+            else:
+                extra = ""
+            print(f"  {task_type}: {stats['accuracy']:.1%} ({stats['count']} questions){extra}")
 
         print(f"\nBy Model × Condition:")
         for key, stats in summary.get("by_model_condition", {}).items():

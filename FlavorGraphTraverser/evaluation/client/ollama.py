@@ -9,6 +9,7 @@ import requests
 import json
 from typing import Dict, List, Optional, Any
 from .base import BaseClient, Message, LLMResponse, UsageStats
+from ..utils.response_normalizer import normalize_response
 
 
 class OllamaClient(BaseClient):
@@ -100,8 +101,11 @@ class OllamaClient(BaseClient):
 
         # Parse response
         message = result.get("message", {})
-        content = message.get("content", "")
+        raw_content = message.get("content", "") or ""
         tool_calls = message.get("tool_calls")
+
+        # Strip inline thinking tags (for local reasoning models e.g. deepseek-r1, qwen3)
+        clean_content, thinking_content = normalize_response(raw_content)
 
         # Extract usage stats (Ollama provides prompt/completion eval counts)
         usage = None
@@ -113,11 +117,12 @@ class OllamaClient(BaseClient):
             )
 
         return LLMResponse(
-            content=content,
+            content=clean_content,
             tool_calls=tool_calls,
             usage=usage,
             finish_reason=result.get("done_reason"),
-            raw_response=result
+            raw_response=result,
+            thinking_content=thinking_content,
         )
 
     def supports_function_calling(self) -> bool:

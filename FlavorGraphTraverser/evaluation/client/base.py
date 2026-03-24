@@ -18,6 +18,7 @@ class Message:
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
     name: Optional[str] = None  # For tool results
+    thinking_content: Optional[str] = None  # Reasoning tokens (reasoning models only)
 
 
 @dataclass
@@ -34,17 +35,21 @@ class LLMResponse:
     Response from an LLM API call.
 
     Attributes:
-        content: The text response from the model
+        content: The text response from the model (thinking blocks already stripped)
         tool_calls: List of tool calls made (if any)
         usage: Token usage statistics
         finish_reason: Why the model stopped ("stop", "tool_calls", "length", etc.)
         raw_response: Original API response (for debugging)
+        thinking_content: Chain-of-thought from reasoning models (Qwen3, DeepSeek, Grok).
+                          Extracted from <think> tags or provider-specific fields.
+                          None for non-reasoning models.
     """
     content: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
     usage: Optional[UsageStats] = None
     finish_reason: Optional[str] = None
     raw_response: Optional[Dict[str, Any]] = None
+    thinking_content: Optional[str] = None
 
 
 class BaseClient(ABC):

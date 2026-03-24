@@ -27,7 +27,7 @@ closed_source:
       output: 3.0
     enabled: true
 
-  - id: xai/grok-4-1-fast
+  - id: x-ai/grok-4.1-fast
     name: Grok 4.1 Fast
     provider: xAI
     pricing:
@@ -42,7 +42,7 @@ open_source:
     provider: OpenAI
     enabled: true
 
-  - id: qwen/qwen3-235b-a22b-instruct
+  - id: qwen/qwen3-235b-a22b
     name: Qwen3-235B-A22B
     provider: Alibaba
     region: China
@@ -57,13 +57,16 @@ open_source:
   - id: meta-llama/llama-4-maverick
     name: Llama 4 Maverick
     provider: Meta
-    notes: Uses pythonic parser for function calls (medium reliability)
+    tool_mode: icl
+    notes: Native function calling uncertain (supports_tool_parameters=false); using ICL simulation
     enabled: true
 
   - id: deepseek/deepseek-chat
     name: DeepSeek Chat
     provider: DeepSeek
     region: China
+    tool_mode: icl
+    notes: No native function calling support; using ICL simulation for C2/C3
     enabled: true
 
   - id: mistralai/mistral-medium-3
@@ -75,7 +78,8 @@ open_source:
   - id: nvidia/llama-3.3-nemotron-super-49b-v1
     name: Nemotron Super 49B
     provider: NVIDIA
-    notes: May have tool calling issues
+    tool_mode: icl
+    notes: Function calling unconfirmed on OpenRouter; using ICL simulation for C2/C3
     enabled: true
 
 # Local testing model (Ollama)

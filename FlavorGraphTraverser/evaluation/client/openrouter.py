@@ -10,6 +10,7 @@ import requests
 import time
 from typing import Dict, List, Optional, Any
 from .base import BaseClient, Message, LLMResponse, UsageStats
+from ..utils.response_normalizer import normalize_response
 
 
 class OpenRouterClient(BaseClient):
@@ -108,6 +109,7 @@ class OpenRouterClient(BaseClient):
             "messages": formatted_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "include_reasoning": True,  # Surface reasoning tokens in message.reasoning
             **kwargs
         }
 
@@ -210,8 +212,22 @@ class OpenRouterClient(BaseClient):
         # Extract message
         choice = response["choices"][0]
         message = choice["message"]
-        content = message.get("content", "")
+        raw_content = message.get("content", "") or ""
         tool_calls = message.get("tool_calls")
+
+        # OpenRouter normalizes all reasoning models into message.reasoning (plain text).
+        # This covers: Qwen3 (<think> tags stripped), DeepSeek R1 (reasoning_content remapped),
+        # Grok (internal reasoning surfaced), Kimi K2 thinking variant.
+        # message.reasoning_content is the DeepSeek *direct* API field — not used via OpenRouter.
+        provider_thinking = message.get("reasoning") or message.get("reasoning_content")
+
+        # Defensively strip any remaining inline tags as a fallback.
+        # Under normal OpenRouter usage content is already clean, but this guards
+        # against direct API calls or future models that don't follow the convention.
+        clean_content, tag_thinking = normalize_response(raw_content)
+
+        # Prefer the provider field (already cleanly extracted by OpenRouter)
+        thinking_content = provider_thinking or tag_thinking
 
         # Extract usage stats
         usage = None
@@ -227,11 +243,12 @@ class OpenRouterClient(BaseClient):
         finish_reason = choice.get("finish_reason")
 
         return LLMResponse(
-            content=content,
+            content=clean_content,
             tool_calls=tool_calls,
             usage=usage,
             finish_reason=finish_reason,
-            raw_response=response
+            raw_response=response,
+            thinking_content=thinking_content,
         )
 
     def supports_function_calling(self) -> bool:
