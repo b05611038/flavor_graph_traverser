@@ -159,8 +159,20 @@ class QuestionEvaluator:
             parse_result = AnswerParseResult(None, None, None)
 
             if is_f_category:
-                # F-category: get raw model response, pass to judge
-                model_response_text, metrics, errors = self._get_raw_response(messages, metrics)
+                # F-category: multi-turn with tools if C2/C3, else single-turn
+                if self.condition_config["tools_enabled"]:
+                    if self.tool_mode == "icl":
+                        model_response_text, _, metrics, errors = self._evaluate_with_icl_tools(
+                            messages, metrics
+                        )
+                    else:
+                        model_response_text, _, metrics, errors = self._evaluate_with_tools(
+                            messages, question, metrics
+                        )
+                    # Use the full last assistant response as the judge input
+                    model_response_text = self._last_assistant_content(messages) or model_response_text or ""
+                else:
+                    model_response_text, metrics, errors = self._get_raw_response(messages, metrics)
                 judge_score, judge_result_dict, status = self._run_judge(
                     question, model_response_text, errors
                 )
@@ -311,6 +323,12 @@ class QuestionEvaluator:
                 metrics.input_tokens = response.usage.input_tokens
                 metrics.output_tokens = response.usage.output_tokens
                 metrics.total_tokens = response.usage.total_tokens
+            # Save to messages so conversation_history is complete
+            messages.append(Message(
+                role="assistant",
+                content=response.content or "",
+                thinking_content=response.thinking_content,
+            ))
             return response.content or "", metrics, errors
         except Exception as e:
             errors.append({"type": "api_error", "message": str(e)})
@@ -374,22 +392,25 @@ class QuestionEvaluator:
         # Format options
         options_text = "\n".join([f"({key}) {value}" for key, value in sorted(options.items())])
 
-        # Add answer format instruction (dynamic based on number of options)
+        # Add answer format instruction (dynamic based on question type and options)
         option_keys = sorted(options.keys())
+        is_multiselect = isinstance(question.get("correct_answer"), list)
+
         if len(option_keys) == 0:
-            # Open-ended question (e.g., F_flavor_description)
+            # Open-ended question (F_flavor_description)
             answer_format = "Provide your answer in a clear, detailed response."
-        elif len(option_keys) == 1:
-            options_list = option_keys[0]
-            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select ({options_list})".'
+        elif is_multiselect:
+            # A1, A4: select all that apply; NONE if none apply
+            options_list = ", ".join(option_keys)
+            answer_format = (
+                f'When providing your final answer, use this exact format:\n'
+                f'"Therefore, I select (X, Y, ...)" listing all correct options from {options_list}, '
+                f'or "Therefore, I select (NONE)" if none apply.'
+            )
         elif len(option_keys) == 2:
             options_list = f"{option_keys[0]} or {option_keys[1]}"
             answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
-        elif len(option_keys) == 3:
-            options_list = f"{option_keys[0]}, {option_keys[1]}, or {option_keys[2]}"
-            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
         else:
-            # For 4+ options: A, B, C, or D
             options_list = ", ".join(option_keys[:-1]) + f", or {option_keys[-1]}"
             answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
 
