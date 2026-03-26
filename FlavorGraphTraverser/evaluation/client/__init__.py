@@ -28,6 +28,7 @@ Example:
 from .base import BaseClient, Message, LLMResponse, UsageStats
 from .ollama import OllamaClient
 from .openrouter import OpenRouterClient
+from .vllm import VLLMClient
 from typing import Optional, Dict, Any
 
 
@@ -73,10 +74,13 @@ def create_client(
     elif client_type == "openrouter":
         return OpenRouterClient(model=model, **kwargs)
 
+    elif client_type == "vllm":
+        return VLLMClient(model=model, **kwargs)
+
     else:
         raise ValueError(
             f"Unknown client type: {client_type}. "
-            f"Supported types: 'ollama', 'openrouter'"
+            f"Supported types: 'ollama', 'openrouter', 'vllm'"
         )
 
 
@@ -87,5 +91,6 @@ __all__ = [
     "UsageStats",
     "OllamaClient",
     "OpenRouterClient",
+    "VLLMClient",
     "create_client",
 ]

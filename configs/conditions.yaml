@@ -9,7 +9,7 @@ conditions:
     cot_enabled: false
     max_reasoning_calls: 0
     system_prompt: |
-      You are an expert in coffee flavor analysis. Answer the question directly.
+      The following is a question about the coffee flavor wheel hierarchy.
 
   C1:
     name: "CoT with Structural Hint"
@@ -18,8 +18,7 @@ conditions:
     cot_enabled: true
     max_reasoning_calls: 0
     system_prompt: |
-      You are an expert in coffee flavor analysis.
-
+      The following is a question about the coffee flavor wheel hierarchy.
       Flavor descriptors are organized in a hierarchical graph structure
       (e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
 
@@ -28,25 +27,28 @@ conditions:
     description: "Tool-augmented without chain-of-thought"
     tools_enabled: true
     cot_enabled: false
-    max_reasoning_calls: 3
+    max_reasoning_calls: 5
     system_prompt: |
-      You are an expert in coffee flavor analysis with access to a coffee flavor graph database.
-
-      Use the provided tools to query the flavor hierarchy and answer the question.
+      The following is a question about the coffee flavor wheel hierarchy.
+      You have access to a coffee flavor graph database via the provided tools.
+      You may use the tools to look up relationships, or answer directly — your choice.
+      To find the ancestors of a flavor, call get_parent() repeatedly up the tree.
+      The answer options (e.g., 'fruity', 'spices', 'floral') are valid nodes you can query directly.
 
   C3:
     name: "CoT + Tools"
     description: "Full tool-augmented with chain-of-thought"
     tools_enabled: true
     cot_enabled: true
-    max_reasoning_calls: 3
+    max_reasoning_calls: 5
     system_prompt: |
-      You are an expert in coffee flavor analysis with access to a coffee flavor graph database.
-
+      The following is a question about the coffee flavor wheel hierarchy.
+      You have access to a coffee flavor graph database via the provided tools.
+      You may use the tools to look up relationships, or answer directly — your choice.
       Flavor descriptors are organized in a hierarchical graph structure
       (e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
-
-      Use the provided tools to query the flavor hierarchy and answer the question.
+      To find the ancestors of a flavor, call get_parent() repeatedly up the tree.
+      The answer options (e.g., 'fruity', 'spices', 'floral') are valid nodes you can query directly.
 
 # Common settings across all conditions
 common:

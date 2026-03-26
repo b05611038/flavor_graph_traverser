@@ -485,48 +485,78 @@
         .results-list {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 0;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
         }
 
+        /* grid columns: verdict | question_id | task | condition | status | nav | val | turns | model */
         .result-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: 28px 1fr 52px 52px 110px 52px 52px 58px 120px;
             align-items: center;
-            gap: 10px;
-            padding: 10px 14px;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
+            gap: 0;
+            padding: 0;
             background: white;
             cursor: pointer;
             transition: background 0.15s;
             font-size: 13px;
+            border-bottom: 1px solid #e5e7eb;
         }
+
+        .result-row:last-child { border-bottom: none; }
 
         .result-row:hover {
             background: #f0f9ff;
-            border-color: #93c5fd;
         }
 
-        .result-row .verdict {
-            width: 22px;
-            text-align: center;
-            font-size: 15px;
-            flex-shrink: 0;
+        .result-row.header-row {
+            background: #f9fafb;
+            cursor: default;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            border-bottom: 2px solid #e5e7eb;
         }
 
-        .result-row .qid {
-            flex: 1;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            color: #374151;
+        .result-row.header-row:hover { background: #f9fafb; }
+
+        .result-row > * {
+            padding: 9px 10px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
+        .result-row .verdict {
+            text-align: center;
+            font-size: 15px;
+            padding: 9px 4px;
+        }
+
+        .result-row .qid {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #374151;
+        }
+
+        .result-row .col-num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #374151;
+        }
+
+        .result-row .col-num.zero { color: #d1d5db; }
+
         .result-row .meta {
             display: flex;
-            gap: 6px;
-            flex-shrink: 0;
+            gap: 4px;
         }
 
         .badge-condition {
@@ -793,6 +823,17 @@
             <div id="results-status-banner" class="alert alert-warning hidden"></div>
             <div id="results-stats-bar" class="results-stats-bar"></div>
             <div id="results-list" class="results-list"></div>
+
+            <div style="margin-top:16px;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;color:#6b7280;line-height:1.8">
+                <strong style="color:#374151">Column legend</strong> &nbsp;·&nbsp;
+                <strong>Nav</strong> = <code>get_parent</code> / <code>get_children</code> calls — graph traversal steps &nbsp;·&nbsp;
+                <strong>Val</strong> = <code>validate_descriptors</code> calls — descriptor lookup checks &nbsp;·&nbsp;
+                <strong>Turns</strong> = total LLM turns in the conversation (includes tool result injections) &nbsp;·&nbsp;
+                <strong>C0</strong> zero-shot &nbsp;·&nbsp;
+                <strong>C1</strong> chain-of-thought &nbsp;·&nbsp;
+                <strong>C2</strong> tools only &nbsp;·&nbsp;
+                <strong>C3</strong> CoT + tools
+            </div>
         </div>
 
         <!-- Conversation Detail Modal -->
@@ -1165,27 +1206,39 @@
                 return;
             }
 
-            let html = '';
+            const header = `
+                <div class="result-row header-row">
+                    <span></span>
+                    <span>Question ID</span>
+                    <span>Type</span>
+                    <span>Cond</span>
+                    <span>Status</span>
+                    <span title="get_parent / get_children calls" style="text-align:right">Nav</span>
+                    <span title="validate_descriptors calls" style="text-align:right">Val</span>
+                    <span title="Total LLM turns" style="text-align:right">Turns</span>
+                    <span>Model</span>
+                </div>`;
+
+            let html = header;
             for (const r of data.results) {
                 const verdict = r.is_correct ? '✓' : (r.status === 'success' ? '✗' : '⚠');
+                const vColor  = r.is_correct ? '#16a34a' : r.status === 'success' ? '#dc2626' : '#d97706';
                 const vClass  = r.is_correct ? 'correct' : (r.status === 'success' ? 'wrong' : 'error');
-                const judgeTag = r.judge_score !== null
-                    ? `<span class="badge badge-primary">${r.judge_score}/5</span>` : '';
-                const toolTag = r.reasoning_calls > 0
-                    ? `<span class="badge badge-warning">${r.reasoning_calls} calls</span>` : '';
+                const statusBadge = r.judge_score !== null
+                    ? `<span class="badge badge-primary">${r.judge_score}/5</span>`
+                    : `<span class="badge ${vClass==='correct'?'badge-correct':vClass==='wrong'?'badge-wrong':'badge-warning'}">${r.status}</span>`;
 
                 html += `
                     <div class="result-row" onclick="openConvModal('${r.question_id}','${r.model}','${r.condition}')">
-                        <span class="verdict" style="color:${r.is_correct ? '#16a34a' : r.status==='success'?'#dc2626':'#d97706'}">${verdict}</span>
+                        <span class="verdict" style="color:${vColor}">${verdict}</span>
                         <span class="qid">${r.question_id}</span>
-                        <div class="meta">
-                            <span class="badge badge-primary">${r.task_type || ''}</span>
-                            <span class="badge badge-condition">${r.condition}</span>
-                            <span class="badge ${vClass==='correct'?'badge-correct':vClass==='wrong'?'badge-wrong':'badge-warning'}">${r.status}</span>
-                            ${judgeTag}
-                            ${toolTag}
-                        </div>
-                        <span style="font-size:11px;color:#9ca3af;flex-shrink:0">${r.model.split('/').pop()}</span>
+                        <span><span class="badge badge-primary">${r.task_type || ''}</span></span>
+                        <span><span class="badge badge-condition">${r.condition}</span></span>
+                        <span>${statusBadge}</span>
+                        <span class="col-num ${r.reasoning_calls === 0 ? 'zero' : ''}">${r.reasoning_calls}</span>
+                        <span class="col-num ${r.validation_calls === 0 ? 'zero' : ''}">${r.validation_calls}</span>
+                        <span class="col-num">${r.total_turns}</span>
+                        <span style="font-size:11px;color:#6b7280;overflow:hidden;text-overflow:ellipsis">${r.model.split('/').pop()}</span>
                     </div>
                 `;
             }

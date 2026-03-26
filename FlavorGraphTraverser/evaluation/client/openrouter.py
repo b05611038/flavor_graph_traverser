@@ -116,7 +116,7 @@ class OpenRouterClient(BaseClient):
         # Add tools if provided
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload.setdefault("tool_choice", "auto")
 
         # Make API request with retries
         last_error = None

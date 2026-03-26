@@ -33,7 +33,7 @@ def main():
 
     parser.add_argument(
         "--questions",
-        default="data/questions/all_questions_system.json",
+        default="data/questions/benchmark_questions.json",
         help="Path to questions JSON file"
     )
 
@@ -66,14 +66,14 @@ def main():
 
     parser.add_argument(
         "--client",
-        choices=["ollama", "openrouter"],
+        choices=["ollama", "openrouter", "vllm"],
         default="ollama",
         help="Client type"
     )
 
     parser.add_argument(
         "--base-url",
-        help="Base URL for Ollama (default: http://localhost:11434)"
+        help="Base URL for Ollama or vLLM (e.g. http://localhost:8000/v1)"
     )
 
     parser.add_argument(
@@ -98,6 +98,12 @@ def main():
         "--no-cache",
         action="store_true",
         help="Disable caching"
+    )
+
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip confirmation prompt"
     )
 
     parser.add_argument(
@@ -224,7 +230,9 @@ def main():
         print(f"Judge model: {judge_model}")
 
     print()
-    input("Press Enter to continue or Ctrl+C to cancel...")
+    import sys as _sys
+    if not args.yes and _sys.stdin.isatty():
+        input("Press Enter to continue or Ctrl+C to cancel...")
     print()
 
     # Create batch runner
@@ -320,6 +328,9 @@ def main():
             print("  - Check Ollama is running: ollama serve")
             print(f"  - Check model is installed: ollama pull {args.models[0]}")
             print("  - Check base URL is correct")
+        elif args.client == "vllm":
+            print(f"  - Check vLLM server is running at {args.base_url or 'http://localhost:8000/v1'}")
+            print(f"  - Check model name matches: curl {args.base_url or 'http://localhost:8000'}/v1/models")
         else:
             print("  - Check API key is set: export OPENROUTER_API_KEY=...")
             print("  - Check model name is correct")

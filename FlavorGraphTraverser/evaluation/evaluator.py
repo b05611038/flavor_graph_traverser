@@ -143,6 +143,7 @@ class QuestionEvaluator:
         start_time = time.time()
         metrics = EvaluationMetrics()
         errors = []
+        messages = []  # ensure messages is always bound for the except block
 
         # Detect question type
         is_f_category = (
@@ -336,10 +337,10 @@ class QuestionEvaluator:
             return "", metrics, errors
 
     def _last_assistant_content(self, messages: List[Message]) -> str:
-        """Return content of the last assistant message (for multi-select re-parse)."""
+        """Return content of the last non-empty assistant message (for multi-select re-parse)."""
         for msg in reversed(messages):
-            if msg.role == "assistant":
-                return msg.content or ""
+            if msg.role == "assistant" and msg.content:
+                return msg.content
         return ""
 
     def _run_judge(
@@ -382,14 +383,21 @@ class QuestionEvaluator:
 
     def _format_question(self, question: Dict[str, Any]) -> List[Message]:
         """Format question into initial messages."""
-        # System message
-        system_prompt = self.condition_config["system_prompt"]
+        # System message — inject tool call budget when tools are enabled
+        system_prompt = self.condition_config["system_prompt"].rstrip()
+        if self.condition_config["tools_enabled"]:
+            max_calls = self.condition_config["max_reasoning_calls"]
+            system_prompt += (
+                f"\nTool call budget: you may call get_parent and get_children "
+                f"up to {max_calls} times in total (shared budget). "
+                f"validate_descriptors has no call limit."
+            )
         messages = [Message(role="system", content=system_prompt)]
         
         # User message with question
         question_text = question.get("text", "")
-        options = question.get("options", {})
-        
+        options = question.get("options") or {}
+
         # Format options
         options_text = "\n".join([f"({key}) {value}" for key, value in sorted(options.items())])
 
@@ -404,16 +412,16 @@ class QuestionEvaluator:
             # A1, A4: select all that apply; NONE if none apply
             options_list = ", ".join(option_keys)
             answer_format = (
-                f'When providing your final answer, use this exact format:\n'
+                f'You MUST end your response with exactly this format — no other format is accepted:\n'
                 f'"Therefore, I select (X, Y, ...)" listing all correct options from {options_list}, '
                 f'or "Therefore, I select (NONE)" if none apply.'
             )
         elif len(option_keys) == 2:
             options_list = f"{option_keys[0]} or {option_keys[1]}"
-            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
+            answer_format = f'You MUST end your response with exactly this format — no other format is accepted:\n"Therefore, I select (X)" where X is {options_list}.'
         else:
             options_list = ", ".join(option_keys[:-1]) + f", or {option_keys[-1]}"
-            answer_format = f'When providing your final answer, use this exact format:\n"Therefore, I select (X)" where X is {options_list}.'
+            answer_format = f'You MUST end your response with exactly this format — no other format is accepted:\n"Therefore, I select (X)" where X is {options_list}.'
 
         user_message = f"{question_text}\n\n{options_text}\n\n{answer_format}"
         messages.append(Message(role="user", content=user_message))
@@ -547,32 +555,81 @@ class QuestionEvaluator:
                                 name=tool_name
                             ))
                 else:
-                    # No tool calls and no answer - model gave up or refused
-                    return None, AnswerParseResult(None, "No answer or tool call", None), metrics, errors
+                    # No tool calls and no answer - fall through to forced-answer prompt
+                    break
                 
             except Exception as e:
                 errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
                 return None, AnswerParseResult(None, None, None), metrics, errors
         
-        # Exceeded max reasoning calls - force answer
+        # Force answer — two-stage approach:
+        # Stage 1: emphatic message in full context with tool_choice="none".
+        #   Strong models can synthesise tool findings into their answer here.
+        # Stage 2 (fallback): context surgery — clean [system, question, forced]
+        #   for models that return empty when stuck in tool-history context.
         metrics.total_turns += 1
-        messages.append(Message(role="user", content="Provide your final answer now."))
-        
+        max_calls = self.condition_config["max_reasoning_calls"]
+        format_hint = self._answer_format_hint(messages)
+        emphatic_content = (
+            f"You have used your tool call budget ({max_calls} reasoning calls). "
+            f"No more tool calls are allowed. "
+            f"Based on the information gathered above, you MUST provide your final answer now."
+            + format_hint
+        )
+        emphatic_msg = Message(role="user", content=emphatic_content)
+        messages.append(emphatic_msg)
+
         try:
             response = self.client.query(
                 messages,
+                tools=self.tools,
+                tool_choice="none",
                 temperature=self.common_config["temperature"],
                 max_tokens=self.common_config["max_output_tokens"]
             )
-            
             if response.usage:
                 metrics.input_tokens += response.usage.input_tokens
                 metrics.output_tokens += response.usage.output_tokens
                 metrics.total_tokens += response.usage.total_tokens
-            
+
+            if response.content and response.content.strip():
+                # Model answered — use it
+                messages.append(Message(
+                    role="assistant",
+                    content=response.content,
+                    thinking_content=response.thinking_content,
+                ))
+                parse_result = parse_answer(response.content)
+                return parse_result.answer, parse_result, metrics, errors
+        except Exception as e:
+            errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
+
+        # Fallback: context surgery — model is stuck in tool mode, reset context
+        metrics.total_turns += 1
+        fallback_content = "Provide your final answer now." + format_hint
+        fallback_msg = Message(role="user", content=fallback_content)
+        clean_messages = messages[:2] + [fallback_msg]
+        messages.append(fallback_msg)
+
+        try:
+            response = self.client.query(
+                clean_messages,
+                temperature=self.common_config["temperature"],
+                max_tokens=self.common_config["max_output_tokens"]
+            )
+            if response.usage:
+                metrics.input_tokens += response.usage.input_tokens
+                metrics.output_tokens += response.usage.output_tokens
+                metrics.total_tokens += response.usage.total_tokens
+
+            messages.append(Message(
+                role="assistant",
+                content=response.content or "",
+                thinking_content=response.thinking_content,
+            ))
             parse_result = parse_answer(response.content or "")
             return parse_result.answer, parse_result, metrics, errors
-            
+
         except Exception as e:
             errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
             return None, AnswerParseResult(None, None, None), metrics, errors
@@ -661,7 +718,7 @@ class QuestionEvaluator:
                         # Sync back to caller's messages list
                         messages[:] = icl_messages
                         return parse_result.answer, parse_result, metrics, errors
-                    # No answer and no tool call — force answer on next turn
+                    # No answer and no tool call — fall through to forced-answer prompt
                     break
 
             except Exception as e:
@@ -671,7 +728,7 @@ class QuestionEvaluator:
 
         # Force final answer
         metrics.total_turns += 1
-        icl_messages.append(Message(role="user", content="Provide your final answer now."))
+        icl_messages.append(Message(role="user", content="Provide your final answer now." + self._answer_format_hint(messages)))
         try:
             response = self.client.query(
                 icl_messages,
@@ -695,6 +752,15 @@ class QuestionEvaluator:
             errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
             messages[:] = icl_messages
             return None, AnswerParseResult(None, None, None), metrics, errors
+
+    def _answer_format_hint(self, messages: List[Message]) -> str:
+        """Extract the answer format instruction from the original user message."""
+        user_msg = next((m for m in messages if m.role == "user"), None)
+        if user_msg:
+            parts = (user_msg.content or "").rsplit("\n\n", 1)
+            if len(parts) > 1:
+                return "\n\n" + parts[-1]
+        return ""
 
     def _message_to_dict(self, message: Message) -> Dict[str, Any]:
         """Convert Message to dict for logging."""

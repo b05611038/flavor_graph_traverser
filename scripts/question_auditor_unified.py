@@ -692,6 +692,8 @@ def get_results():
             'correct_answer': r.get('correct_answer'),
             'judge_score': r.get('judge_score'),
             'reasoning_calls': metrics.get('reasoning_calls', 0),
+            'validation_calls': metrics.get('validation_calls', 0),
+            'total_turns': metrics.get('total_turns', 0),
             'total_tokens': metrics.get('total_tokens', 0),
             'latency_seconds': r.get('latency_seconds', 0),
         })

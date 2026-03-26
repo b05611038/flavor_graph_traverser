@@ -29,12 +29,23 @@ TOOL_CALL: {"name": "<tool_name>", "args": {<arguments as JSON>}}
 You will receive a TOOL_RESULT line with the output.
 
 Available tools:
-  validate_descriptors  Check whether descriptors exist in the graph (FREE, up to 10 per call).
+  validate_descriptors  Check whether descriptors exist in the graph (up to 10 per call).
                         Args: {"descriptors": ["word1", "word2", ...]}
-  get_parent            Get the parent node(s) of a descriptor (counted toward reasoning limit).
+  get_parent            Get the parent node(s) of a descriptor.
                         Args: {"descriptor": "word"}
-  get_children          Get the child node(s) of a descriptor (counted toward reasoning limit).
-                        Args: {"descriptor": "word"}\
+  get_children          Get the child node(s) of a descriptor.
+                        Args: {"descriptor": "word"}
+
+The answer options in each question (e.g., 'fruity', 'spices', 'floral') are valid graph nodes
+you can query directly — you do not need to validate them first.
+To find ancestors of a flavor, call get_parent() repeatedly up the tree.
+
+Example traversal:
+TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "jasmine"}}
+TOOL_RESULT: {"descriptor": "jasmine", "parents": ["floral"], "error": null}
+TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "floral"}}
+TOOL_RESULT: {"descriptor": "floral", "parents": [], "error": null}
+(empty parents means 'floral' is a root category)\
 """
 
 
