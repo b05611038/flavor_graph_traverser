@@ -158,7 +158,7 @@ open_ended:
         - "category_overview"  # 2 questions
     evaluation:
       method: "llm_judge"
-      judge_model: "anthropic/claude-opus-4.5"
+      judge_model: "anthropic/claude-opus-4.6"
       rubric:
         - "Accuracy (0-2): Factually correct based on graph"
         - "Completeness (0-2): Covers relevant aspects"

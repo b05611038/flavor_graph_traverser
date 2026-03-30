@@ -94,7 +94,7 @@ Tests tool definition schemas for function calling.
 - ✅ validate_descriptors schema (array, max 10 items)
 - ✅ get_parent schema (string parameter)
 - ✅ get_children schema (string parameter)
-- ✅ Descriptions mention key information (FREE vs COUNTED, 3-call limit)
+- ✅ Descriptions mention key information (no call limit vs budget, shared budget)
 
 **Coverage:**
 - OpenAI function calling format compliance

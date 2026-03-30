@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
+from prompts import load_prompt
+
 # Import new state manager
 from FlavorGraphTraverser.evaluation.audit_state_manager import (
     AuditStateManager,
@@ -167,39 +169,23 @@ def format_question_for_display(question: Dict) -> Dict[str, str]:
     if answer_format == "open":
         llm_view = text
     elif answer_format == "multi_label":
-        llm_view = f"""{text}
-
-{options_text}
-
-When providing your final answer, select all applicable options.
-Use this exact format: "Therefore, I select (X, Y, Z)" where X, Y, Z are the correct letters.
-If none apply, respond: "Therefore, I select (NONE)"
-"""
+        option_keys = sorted(options.keys())
+        options_list = ", ".join(option_keys)
+        answer_instruction = load_prompt("answer_format_multi", options_list=options_list)
+        llm_view = f"{text}\n\n{options_text}\n\n{answer_instruction}\n"
     else:
         # Generate dynamic answer format based on number of options
         option_keys = sorted(options.keys())
         if len(option_keys) == 0:
-            answer_instruction = "Provide your answer in a clear, detailed response."
-        elif len(option_keys) == 1:
-            answer_instruction = f'"Therefore, I select ({option_keys[0]})".'
+            answer_instruction = load_prompt("answer_format_open")
         elif len(option_keys) == 2:
             options_list = f"{option_keys[0]} or {option_keys[1]}"
-            answer_instruction = f'"Therefore, I select (X)" where X is {options_list}.'
-        elif len(option_keys) == 3:
-            options_list = f"{option_keys[0]}, {option_keys[1]}, or {option_keys[2]}"
-            answer_instruction = f'"Therefore, I select (X)" where X is {options_list}.'
+            answer_instruction = load_prompt("answer_format_single", options_list=options_list)
         else:
-            # For 4+ options
             options_list = ", ".join(option_keys[:-1]) + f", or {option_keys[-1]}"
-            answer_instruction = f'"Therefore, I select (X)" where X is {options_list}.'
+            answer_instruction = load_prompt("answer_format_single", options_list=options_list)
 
-        llm_view = f"""{text}
-
-{options_text}
-
-When providing your final answer, use this exact format:
-{answer_instruction}
-"""
+        llm_view = f"{text}\n\n{options_text}\n\n{answer_instruction}\n"
 
     # Annotated view with template/objects highlighted
     annotated_parts = []

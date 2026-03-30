@@ -54,14 +54,14 @@ def mock_config():
     """Mock configuration."""
     return {
         "conditions": {
-            "C0": {
-                "name": "Zero-shot",
+            "no_tool": {
+                "name": "Baseline",
                 "tools_enabled": False,
                 "max_reasoning_calls": 0,
                 "system_prompt": "You are an expert."
             },
-            "C2": {
-                "name": "Tools only",
+            "tool": {
+                "name": "Tool-Augmented",
                 "tools_enabled": True,
                 "max_reasoning_calls": 3,
                 "system_prompt": "You are an expert with tools."
@@ -69,7 +69,7 @@ def mock_config():
         },
         "common": {
             "temperature": 0,
-            "max_output_tokens": 1024,
+            "max_output_tokens": 4096,
             "answer_format": "Therefore, I select (X)"
         }
     }
@@ -81,29 +81,29 @@ class TestQuestionEvaluatorInit:
     def test_init_with_config(self, mock_client, mock_executor, mock_config):
         """Test initialization with provided config."""
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
 
         assert evaluator.client == mock_client
         assert evaluator.executor == mock_executor
-        assert evaluator.condition == "C0"
-        assert evaluator.tools is None  # C0 has no tools
+        assert evaluator.condition == "no_tool"
+        assert evaluator.tools is None  # no_tool has no tools
 
     def test_init_tools_enabled(self, mock_client, mock_executor, mock_config):
         """Test initialization with tools enabled."""
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
 
-        assert evaluator.tools is not None  # C2 has tools
+        assert evaluator.tools is not None  # tool condition has tools
         assert len(evaluator.tools) == 3  # validate, get_parent, get_children
 
 
 class TestDirectEvaluation:
-    """Test direct evaluation (C0, C1)."""
+    """Test direct evaluation (no_tool condition)."""
 
-    def test_c0_correct_answer(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C0 with correct answer."""
+    def test_no_tool_correct_answer(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test no_tool with correct answer."""
         # Mock response with correct answer
         mock_client.query.return_value = LLMResponse(
             content="Therefore, I select (C)",
@@ -111,7 +111,7 @@ class TestDirectEvaluation:
         )
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -123,15 +123,15 @@ class TestDirectEvaluation:
         assert result.metrics.reasoning_calls == 0
         assert result.metrics.validation_calls == 0
 
-    def test_c0_wrong_answer(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C0 with wrong answer."""
+    def test_no_tool_wrong_answer(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test no_tool with wrong answer."""
         mock_client.query.return_value = LLMResponse(
             content="Therefore, I select (A)",
             usage=UsageStats(input_tokens=50, output_tokens=10, total_tokens=60)
         )
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -139,15 +139,15 @@ class TestDirectEvaluation:
         assert result.is_correct is False
         assert result.status == "success"
 
-    def test_c0_parse_error(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C0 with unparseable answer."""
+    def test_no_tool_parse_error(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test no_tool with unparseable answer."""
         mock_client.query.return_value = LLMResponse(
             content="I don't know the answer.",
             usage=UsageStats(input_tokens=50, output_tokens=10, total_tokens=60)
         )
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -155,12 +155,12 @@ class TestDirectEvaluation:
         assert result.is_correct is False
         assert result.status == "parse_error"
 
-    def test_c0_api_error(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C0 with API error."""
+    def test_no_tool_api_error(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test no_tool with API error."""
         mock_client.query.side_effect = Exception("API timeout")
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -171,17 +171,17 @@ class TestDirectEvaluation:
 
 
 class TestToolEvaluation:
-    """Test tool-augmented evaluation (C2, C3)."""
+    """Test tool-augmented evaluation (tool condition)."""
 
-    def test_c2_answer_immediately(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C2 when model answers immediately without tools."""
+    def test_tool_answer_immediately(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test tool condition when model answers immediately without tools."""
         mock_client.query.return_value = LLMResponse(
             content="Therefore, I select (C)",
             usage=UsageStats(input_tokens=50, output_tokens=10, total_tokens=60)
         )
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -192,8 +192,8 @@ class TestToolEvaluation:
         assert result.metrics.validation_calls == 0
         assert result.metrics.answered_early is True  # Answered before max calls
 
-    def test_c2_uses_validation(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C2 with validation tool call."""
+    def test_tool_uses_validation(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test tool conditionwith validation tool call."""
         # First response: validate tool call
         # Second response: answer
         mock_client.query.side_effect = [
@@ -214,7 +214,7 @@ class TestToolEvaluation:
         mock_executor.execute.return_value = {"valid": {"chocolate": True}, "invalid": []}
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -224,8 +224,8 @@ class TestToolEvaluation:
         assert result.metrics.reasoning_calls == 0  # validate doesn't count
         assert result.metrics.total_turns == 2
 
-    def test_c2_uses_reasoning_tools(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C2 with reasoning tool calls."""
+    def test_tool_uses_reasoning_tools(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test tool conditionwith reasoning tool calls."""
         mock_client.query.side_effect = [
             # Turn 1: get_parent
             LLMResponse(
@@ -258,7 +258,7 @@ class TestToolEvaluation:
         ]
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -269,8 +269,8 @@ class TestToolEvaluation:
         assert result.metrics.total_turns == 3
         assert result.metrics.answered_early is True  # Answered at call 2, max is 3
 
-    def test_c2_max_reasoning_calls(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C2 hitting max reasoning calls limit."""
+    def test_tool_max_reasoning_calls(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test tool conditionhitting max reasoning calls limit."""
         # 3 reasoning calls, then forced answer
         mock_client.query.side_effect = [
             # Turn 1
@@ -314,7 +314,7 @@ class TestToolEvaluation:
         ]
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -324,8 +324,8 @@ class TestToolEvaluation:
         assert result.metrics.total_turns == 4  # 3 tool turns + 1 forced answer
         assert result.metrics.answered_early is False  # Forced after max calls
 
-    def test_c2_tool_error(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C2 with tool execution error."""
+    def test_tool_tool_error(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test tool conditionwith tool execution error."""
         mock_client.query.side_effect = [
             # Tool call
             LLMResponse(
@@ -346,7 +346,7 @@ class TestToolEvaluation:
         mock_executor.execute.side_effect = Exception("Descriptor not found")
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -356,15 +356,15 @@ class TestToolEvaluation:
         assert len(result.errors) > 0
         assert result.errors[0]["type"] == "tool_error"
 
-    def test_c2_no_answer_no_tools(self, mock_client, mock_executor, sample_question, mock_config):
-        """Test C2 when model gives neither answer nor tool calls."""
+    def test_tool_no_answer_no_tools(self, mock_client, mock_executor, sample_question, mock_config):
+        """Test tool conditionwhen model gives neither answer nor tool calls."""
         mock_client.query.return_value = LLMResponse(
             content="I cannot answer this question.",
             usage=UsageStats(input_tokens=50, output_tokens=10, total_tokens=60)
         )
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -393,7 +393,7 @@ class TestMetricsCollection:
         mock_executor.execute.return_value = {"parent": "cocoa"}
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C2", config=mock_config
+            mock_client, mock_executor, "tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -415,7 +415,7 @@ class TestMetricsCollection:
         mock_client.query.side_effect = slow_query
 
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
         result = evaluator.evaluate(sample_question)
 
@@ -429,7 +429,7 @@ class TestQuestionFormatting:
     def test_format_question(self, mock_client, mock_executor, sample_question, mock_config):
         """Test question formatting creates correct messages."""
         evaluator = QuestionEvaluator(
-            mock_client, mock_executor, "C0", config=mock_config
+            mock_client, mock_executor, "no_tool", config=mock_config
         )
 
         messages = evaluator._format_question(sample_question)

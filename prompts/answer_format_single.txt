@@ -1,0 +1,2 @@
+You MUST end your response with exactly this format — no other format is accepted:
+"Therefore, I select (X)" where X is {options_list}.

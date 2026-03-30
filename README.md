@@ -19,11 +19,9 @@ For domain-specific hierarchical reasoning, how does tool-augmented inference co
 
 Tool-augmented LLMs achieve near-full-context accuracy with significantly lower token cost, making them practical for deployable sensory recommendation systems.
 
-### Key Comparisons
+### Key Comparison
 
-- **C2 vs C0**: How much do tools help?
-- **C1 vs C0**: Does structured reasoning alone help without tools?
-- **C3 vs C2**: Does Chain-of-Thought improve tool-augmented reasoning?
+- **tool vs no_tool**: Does graph-tool access improve hierarchical reasoning?
 
 See [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) for the full experimental design, and [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) for the design philosophy.
 
@@ -61,9 +59,9 @@ executor = GraphToolExecutor(graph)
 result = executor.validate_descriptors(['rose', 'chocolate', 'unknown'])
 # {'valid': ['rose', 'chocolate'], 'invalid': ['unknown']}
 
-# Get parent (COUNTED — toward 3-call limit)
+# Get parent (COUNTED — toward 5-call budget)
 result = executor.get_parent('rose')
-# {'descriptor': 'rose', 'parents': ['floral (middle layer)'], 'error': None}
+# {'descriptor': 'rose', 'parents': ['floral'], 'error': None}
 ```
 
 ### 3. Run a Benchmark Evaluation
@@ -71,11 +69,11 @@ result = executor.get_parent('rose')
 ```python
 from FlavorGraphTraverser.evaluation import create_client, GraphToolExecutor, QuestionEvaluator
 
-client = create_client("openrouter", "anthropic/claude-sonnet-4.5")
-evaluator = QuestionEvaluator(client, executor, "C3")
+client = create_client("openrouter", "anthropic/claude-sonnet-4.6")
+evaluator = QuestionEvaluator(client, executor, "tool")
 result = evaluator.evaluate(question)
 
-print(f"Correct: {result.is_correct}, Reasoning calls: {result.metrics.reasoning_calls}")
+print(f"Score: {result.score:.2f}, Correct: {result.is_correct}, Reasoning calls: {result.metrics.reasoning_calls}")
 ```
 
 ### 4. Run Tests
@@ -126,9 +124,10 @@ FlavorGraphTraverser/
 ├── loader.py                   # Graph loading utilities
 │
 ├── evaluation/                 # Benchmarking infrastructure
-│   ├── client/                 # LLM client abstraction (Ollama, OpenRouter)
+│   ├── client/                 # LLM clients (OpenRouter for production; Ollama, vLLM for local testing)
 │   ├── tools/                  # Graph tool interface (function calling)
-│   ├── utils/                  # Answer parser, config loader
+│   ├── utils/                  # Answer parser, config loader, scoring
+│   ├── judge/                  # LLM-as-a-judge for F-category scoring
 │   ├── evaluator.py            # QuestionEvaluator — single-question loop
 │   └── batch_runner.py         # BatchRunner — multi-question/model/condition
 │
@@ -137,9 +136,21 @@ FlavorGraphTraverser/
     ├── samplers.py             # Descriptor sampling strategies
     └── validators.py           # Question validation (incl. leakage checks)
 
+prompts/                        # All prompt templates (plain text files)
+├── __init__.py                 # load_prompt("name", key=val) loader
+├── judge_system.txt            # LLM-as-a-judge system prompt
+├── judge_closing.txt           # Judge evaluation closing instruction
+├── answer_format_single.txt    # Single-choice: "Therefore, I select (X)"
+├── answer_format_multi.txt     # Multi-select: "Therefore, I select (X, Y, ...)"
+├── answer_format_open.txt      # F-category open-ended instruction
+├── forced_answer.txt           # Emphatic "budget reached" message
+├── forced_answer_fallback.txt  # Context surgery fallback
+├── tool_budget.txt             # Tool call budget injection
+└── icl_tools.txt               # ICL tool instructions + example traversal
+
 configs/                        # YAML configuration files
 ├── models.yaml                 # 11 models + judge
-├── conditions.yaml             # C0–C3 with prompts
+├── conditions.yaml             # no_tool / tool conditions
 ├── experiment.yaml             # Experiment configuration
 └── README.md                   # Configuration guide
 
@@ -149,8 +160,9 @@ data/                           # Data files (private, excluded from git)
 └── questions/                  # Generated benchmark questions
 
 scripts/                        # Executable scripts
+├── run_experiment.py           # Main experiment runner
 ├── generate_all_questions.py   # Generate all question types
-├── question_auditor_unified.py # Web-based question auditor
+├── question_auditor_unified.py # Web-based auditor + results viewer
 ├── manage_queue.py             # Audit queue management
 ├── backup_manager.py           # Question backup/restore
 └── run_tests.sh                # Test runner
@@ -195,22 +207,55 @@ See [docs/AUDITING.md](docs/AUDITING.md) for the audit workflow, queue managemen
 
 ## Experimental Setup
 
-### Conditions (C0–C3)
+### Conditions
 
-| Condition | Tools | CoT | Max Reasoning Calls | Description |
-|-----------|-------|-----|---------------------|-------------|
-| **C0** | ✗ | ✗ | — | Zero-shot baseline |
-| **C1** | ✗ | ✓ | — | CoT with structural hint |
-| **C2** | ✓ | ✗ | 3 | Tools only |
-| **C3** | ✓ | ✓ | 3 | CoT + Tools |
+| Condition | Tools | Max Reasoning Calls | Description |
+|-----------|-------|---------------------|-------------|
+| **no_tool** | ✗ | — | Baseline (no tool access) |
+| **tool** | ✓ | 5 | Tool-augmented |
+
+Single-axis design: **with vs. without tools**. CoT conditions (C1, C3) were dropped because reasoning models already think internally (making CoT redundant), and adding CoT only for non-reasoning models would confound cross-model comparison. All models are tested with default settings; reasoning vs non-reasoning is an analysis dimension, not a controlled variable.
+
+System prompts follow MMLU/τ-bench conventions: neutral framing (`"The following is a question about the coffee flavor wheel hierarchy."`) without expert role claims. Tool access is described as opt-in (`"You may use the tools... your choice."`). See `configs/conditions.yaml` for full prompts.
 
 ### Tool Interface
 
 Three tools exposed to LLMs:
 
-1. **`validate_descriptors`** (FREE, unlimited) — check if descriptors exist in graph
-2. **`get_parent`** (COUNTED, max 3 shared) — get parent node(s) of a descriptor
-3. **`get_children`** (COUNTED, max 3 shared) — get child node(s) of a descriptor
+1. **`validate_descriptors`** (no call limit) — check if descriptors exist in graph
+2. **`get_parent`** (counts toward budget, max 5 shared) — get parent node(s) of a descriptor
+3. **`get_children`** (counts toward budget, max 5 shared) — get child node(s) of a descriptor
+
+The tool call budget is injected dynamically into the system prompt. When the budget is exhausted, an emphatic forced-answer message is sent; if the model still returns empty, a context-surgery fallback strips tool history and queries with a clean prompt.
+
+### Scoring
+
+Each question scores **0–1** continuously:
+
+| Question type | Scoring method |
+|---|---|
+| Single-choice (A2, A3, E1, E2, E3) | Binary: 0 or 1 |
+| Multi-select (A1, A4, A5) | F1 between predicted and correct sets |
+| F-category (open-ended) | judge_score / 5 (LLM-as-a-judge, 0–5 scale) |
+
+Two aggregate scores are reported:
+- **Macro score**: mean of per-category averages (each of 9 categories weighted equally)
+- **Micro score**: mean of all individual question scores
+
+### Prompt Management
+
+All prompt templates are externalized to `prompts/*.txt` files. To modify any prompt, edit the `.txt` file directly — no Python changes needed.
+
+```python
+from prompts import load_prompt
+
+# Simple load
+system = load_prompt("judge_system")
+
+# With placeholder substitution
+fmt = load_prompt("answer_format_single", options_list="A, B, C, or D")
+budget = load_prompt("tool_budget", max_calls=5)
+```
 
 ### Question Dataset (~275 questions)
 
@@ -224,7 +269,7 @@ Three tools exposed to LLMs:
 | **E** Similarity | E1 Similarity Ranking | 30 | Confirmed |
 | | E2 Pairwise Comparison | 30 | Confirmed |
 | | E3 Odd One Out | 20 | Confirmed |
-| **F** Open | F Open Reasoning | 15 | In progress |
+| **F** Open | F Open Reasoning | 15 | Confirmed |
 
 ---
 
@@ -249,12 +294,13 @@ See [docs/TESTING.md](docs/TESTING.md) for complete test documentation.
 
 | Document | Contents |
 |---|---|
-| [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) | Experimental design, conditions, tool interface, metrics |
+| [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) | Experimental design, conditions, scoring, tool interface |
 | [docs/QUESTION_GENERATION.md](docs/QUESTION_GENERATION.md) | Generation pipeline, leakage prevention, validation |
-| [docs/AUDITING.md](docs/AUDITING.md) | Audit workflow, queue management, backups |
+| [docs/AUDITING.md](docs/AUDITING.md) | Audit workflow, results viewer, queue management |
 | [docs/TESTING.md](docs/TESTING.md) | Test suite, fixtures, CI |
 | [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) | Design philosophy, F-question rationale |
 | [configs/README.md](configs/README.md) | YAML configuration reference |
+| [prompts/](prompts/) | All prompt templates (one `.txt` file per prompt) |
 
 ---
 
@@ -276,11 +322,12 @@ graph.plot(filename)                   # Save graph visualization
 
 ## Expected Outputs
 
-1. **Table 1**: Accuracy (%) by Model × Condition (C0–C3)
-2. **Table 2**: Per-task breakdown (A1–A5, E1–E3, F)
-3. **Figure 1**: Accuracy vs. tool calls — diminishing returns
-4. **Figure 2**: Token cost vs. accuracy trade-off
+1. **Table 1**: Macro score (%) by Model × Condition (no_tool, tool), grouped by model type
+2. **Table 2**: Per-category score breakdown (A1–A5, E1–E3, F) — with F1 for multi-select and judge scores for F
+3. **Figure 1**: Score vs. tool calls — diminishing returns
+4. **Figure 2**: Token cost vs. score trade-off
 5. **Statistical analysis**: McNemar's test with Bonferroni correction
+6. **Dashboard**: Interactive results viewer with CSV export (`http://localhost:5000/results`)
 
 ---
 

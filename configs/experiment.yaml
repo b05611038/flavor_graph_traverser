@@ -37,7 +37,7 @@ runs:
     client_type: "ollama"
     models:
       - "tinyllama"
-    conditions: ["C0", "C2"]
+    conditions: ["no_tool", "tool"]
     max_questions: 5
     question_types: ["A1"]  # Only test one type
 
@@ -49,7 +49,7 @@ runs:
     models:
       - "openai/gpt-3.5-turbo"
       - "anthropic/claude-haiku"
-    conditions: ["C0", "C2", "C3"]
+    conditions: ["no_tool", "tool"]
     max_questions: 10
     question_types: ["A1", "A2", "E1"]
 
@@ -59,7 +59,7 @@ runs:
     description: "Full benchmark with all models and conditions"
     client_type: "openrouter"
     models: "all"  # Use all models from models.yaml
-    conditions: ["C0", "C1", "C2", "C3"]
+    conditions: ["no_tool", "tool"]
     max_questions: null  # All questions
     question_types: null  # All types
 

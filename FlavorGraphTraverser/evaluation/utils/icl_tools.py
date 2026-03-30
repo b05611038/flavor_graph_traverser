@@ -1,8 +1,8 @@
 """
 ICL Tool Simulation
 
-For models without native function calling support (deepseek/deepseek-chat,
-meta-llama/llama-4-maverick, nvidia/llama-3.3-nemotron-super-49b-v1),
+For models without native function calling support (deepseek/deepseek-v3.2,
+meta-llama/llama-4-maverick, nvidia/nemotron-3-super-120b-a12b),
 tools are described in the system prompt and tool calls are parsed from
 model text output.
 
@@ -15,38 +15,16 @@ Tool results are injected as:
 If the model does not output a TOOL_CALL line, the turn is treated as a
 direct answer attempt — parse_answer() runs on the text as normal. This
 means ICL mode degrades gracefully: a model that ignores the tool format
-just answers from its own knowledge, equivalent to C0/C1.
+just answers from its own knowledge, equivalent to the no_tool condition.
 """
 
 import re
 import json
 from typing import Optional, Tuple, Dict, Any
 
+from prompts import load_prompt
 
-ICL_TOOL_INSTRUCTIONS = """\
-To call a tool, output exactly this format on its own line:
-TOOL_CALL: {"name": "<tool_name>", "args": {<arguments as JSON>}}
-You will receive a TOOL_RESULT line with the output.
-
-Available tools:
-  validate_descriptors  Check whether descriptors exist in the graph (up to 10 per call).
-                        Args: {"descriptors": ["word1", "word2", ...]}
-  get_parent            Get the parent node(s) of a descriptor.
-                        Args: {"descriptor": "word"}
-  get_children          Get the child node(s) of a descriptor.
-                        Args: {"descriptor": "word"}
-
-The answer options in each question (e.g., 'fruity', 'spices', 'floral') are valid graph nodes
-you can query directly — you do not need to validate them first.
-To find ancestors of a flavor, call get_parent() repeatedly up the tree.
-
-Example traversal:
-TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "jasmine"}}
-TOOL_RESULT: {"descriptor": "jasmine", "parents": ["floral"], "error": null}
-TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "floral"}}
-TOOL_RESULT: {"descriptor": "floral", "parents": [], "error": null}
-(empty parents means 'floral' is a root category)\
-"""
+ICL_TOOL_INSTRUCTIONS = load_prompt("icl_tools")
 
 
 def build_icl_system_prompt(base_system_prompt: str) -> str:

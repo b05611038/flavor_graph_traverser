@@ -28,7 +28,7 @@ def main():
     print("This test runs the complete pipeline:")
     print("  1. Load 10 test questions")
     print("  2. Run batch evaluation with TinyLlama")
-    print("  3. Test conditions: C0 (zero-shot) and C2 (tools)")
+    print("  3. Test conditions: no_tool (baseline) and tool (tool-augmented)")
     print("  4. Save and display results")
     print()
     print("="*70)
@@ -75,7 +75,7 @@ def main():
     try:
         results = runner.run(
             models=["tinyllama"],
-            conditions=["C0", "C2"],  # Test both zero-shot and tools
+            conditions=["no_tool", "tool"],  # Test both baseline and tool-augmented
             client_type="ollama",
             base_url="http://localhost:11434"  # Default Ollama URL
         )

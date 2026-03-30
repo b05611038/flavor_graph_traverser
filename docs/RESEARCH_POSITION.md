@@ -99,12 +99,11 @@ This design is internally consistent with the benchmark's experimental condition
 
 | Condition | Expected behavior |
 |---|---|
-| C0 (no tools) | Answers from training intuition — may sound plausible but be graph-inconsistent |
-| C3/C4 (flavor wheel tool) | Traverses the tool graph to find adjacent nodes — reasoning grounded in hierarchy |
-| C5 (full system graph) | Reasons with maximum graph coverage — most precise proximity reasoning |
+| no_tool | Answers from training intuition — may sound plausible but be graph-inconsistent |
+| tool (flavor wheel) | Traverses the tool graph to find adjacent nodes — reasoning grounded in hierarchy |
 | Judge (system graph tool) | Verifies whether reasoning direction matches the full hierarchy |
 
-The gap between C0 and C3/C4 measures the **value of following the guide** over relying on training intuition. The gap between C3/C4 and C5 measures the **cost of the tool's incompleteness** (the flavor wheel has 111 nodes; the system graph has 1,175).
+The gap between `no_tool` and `tool` measures the **value of following the guide** over relying on training intuition.
 
 ---
 

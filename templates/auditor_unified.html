@@ -494,7 +494,7 @@
         /* grid columns: verdict | question_id | task | condition | status | nav | val | turns | model */
         .result-row {
             display: grid;
-            grid-template-columns: 28px 1fr 52px 52px 110px 52px 52px 58px 120px;
+            grid-template-columns: 28px 1fr 52px 52px 110px 54px 52px 52px 58px 120px;
             align-items: center;
             gap: 0;
             padding: 0;
@@ -786,6 +786,19 @@
 
         <!-- Results Mode Content -->
         <div class="content hidden" id="results-mode">
+            <!-- Sub-tabs: Dashboard vs Detail -->
+            <div style="display:flex;gap:8px;margin-bottom:14px">
+                <button class="btn btn-sm" id="tab-dashboard" onclick="showResultsTab('dashboard')" style="font-weight:600;background:#3b82f6;color:white;border:none;padding:6px 16px;border-radius:6px;cursor:pointer">Dashboard</button>
+                <button class="btn btn-sm" id="tab-detail" onclick="showResultsTab('detail')" style="font-weight:500;background:#e5e7eb;color:#374151;border:none;padding:6px 16px;border-radius:6px;cursor:pointer">Detail</button>
+            </div>
+
+            <!-- DASHBOARD SUB-TAB -->
+            <div id="results-dashboard">
+                <div id="dashboard-content" style="font-size:13px">Loading dashboard...</div>
+            </div>
+
+            <!-- DETAIL SUB-TAB -->
+            <div id="results-detail" class="hidden">
             <div class="results-filters">
                 <div class="filter-group">
                     <label>Model</label>
@@ -795,10 +808,8 @@
                     <label>Condition</label>
                     <select id="res-condition-filter">
                         <option value="">All</option>
-                        <option value="C0">C0 – Zero-shot</option>
-                        <option value="C1">C1 – CoT</option>
-                        <option value="C2">C2 – Tools</option>
-                        <option value="C3">C3 – CoT+Tools</option>
+                        <option value="no_tool">no_tool – Baseline</option>
+                        <option value="tool">tool – Tool-Augmented</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -826,14 +837,14 @@
 
             <div style="margin-top:16px;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;color:#6b7280;line-height:1.8">
                 <strong style="color:#374151">Column legend</strong> &nbsp;·&nbsp;
+                <strong>Score</strong> = 0–100 continuous score: binary for single-choice, F1 for multi-select, judge_score/5 for F-category &nbsp;·&nbsp;
                 <strong>Nav</strong> = <code>get_parent</code> / <code>get_children</code> calls — graph traversal steps &nbsp;·&nbsp;
                 <strong>Val</strong> = <code>validate_descriptors</code> calls — descriptor lookup checks &nbsp;·&nbsp;
                 <strong>Turns</strong> = total LLM turns in the conversation (includes tool result injections) &nbsp;·&nbsp;
-                <strong>C0</strong> zero-shot &nbsp;·&nbsp;
-                <strong>C1</strong> chain-of-thought &nbsp;·&nbsp;
-                <strong>C2</strong> tools only &nbsp;·&nbsp;
-                <strong>C3</strong> CoT + tools
+                <strong>no_tool</strong> baseline (no tools) &nbsp;·&nbsp;
+                <strong>tool</strong> tool-augmented
             </div>
+            </div><!-- end results-detail -->
         </div>
 
         <!-- Conversation Detail Modal -->
@@ -1133,6 +1144,157 @@
             });
 
             loadResults();
+            loadDashboard();
+        }
+
+        function showResultsTab(tab) {
+            const dash = document.getElementById('results-dashboard');
+            const detail = document.getElementById('results-detail');
+            const btnDash = document.getElementById('tab-dashboard');
+            const btnDetail = document.getElementById('tab-detail');
+            if (tab === 'dashboard') {
+                dash.classList.remove('hidden');
+                detail.classList.add('hidden');
+                btnDash.style.background = '#3b82f6'; btnDash.style.color = 'white';
+                btnDetail.style.background = '#e5e7eb'; btnDetail.style.color = '#374151';
+            } else {
+                dash.classList.add('hidden');
+                detail.classList.remove('hidden');
+                btnDetail.style.background = '#3b82f6'; btnDetail.style.color = 'white';
+                btnDash.style.background = '#e5e7eb'; btnDash.style.color = '#374151';
+            }
+        }
+
+        let _dashboardCsvData = '';
+
+        async function loadDashboard() {
+            const resp = await fetch('/api/results?' + new URLSearchParams({}));
+            const data = await resp.json();
+            if (data.error || !data.results.length) {
+                document.getElementById('dashboard-content').innerHTML = '<p>No results to display.</p>';
+                return;
+            }
+
+            const results = data.results;
+
+            // Collect unique models, conditions, task types
+            const models = [...new Set(results.map(r => r.model))].sort();
+            const conditions = [...new Set(results.map(r => r.condition))].sort();
+            const taskTypes = [...new Set(results.map(r => r.task_type))].sort();
+
+            // Build per model×condition×task_type score map
+            const scoreMap = {};  // key: `${model}|${condition}|${taskType}` → [scores]
+            for (const r of results) {
+                const key = `${r.model}|${r.condition}|${r.task_type}`;
+                if (!scoreMap[key]) scoreMap[key] = [];
+                scoreMap[key].push(r.score);
+            }
+
+            const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
+            const cellColor = v => v === null ? '#f3f4f6' : v >= 0.8 ? '#dcfce7' : v >= 0.5 ? '#fef9c3' : v > 0 ? '#fef2f2' : '#f9fafb';
+            const cellText = v => v === null ? '–' : (v * 100).toFixed(0);
+
+            // Build table: one section per condition
+            const isComplete = data.run_status === 'complete';
+            const statusLabel = isComplete
+                ? '<span style="color:#16a34a;font-weight:600">Complete</span>'
+                : `<span style="color:#d97706;font-weight:600;text-transform:uppercase">${data.run_status || 'unknown'} — Preliminary Results</span>`;
+
+            let html = '<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">' +
+                '<button onclick="downloadDashboardCsv()" style="padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;background:white;cursor:pointer;font-size:12px">Download CSV</button>' +
+                `<span style="font-size:12px;color:#6b7280">Run status: ${statusLabel}</span>` +
+                (isComplete ? '' : '<span style="font-size:11px;padding:3px 10px;background:#fef3c7;color:#92400e;border-radius:4px">Scores are preliminary until all questions are evaluated</span>') +
+                '</div>';
+
+            let csvLines = [];
+            // CSV header
+            let csvHeader = ['Model', 'Condition', ...taskTypes, 'Macro', 'Micro', 'Accuracy'];
+            csvLines.push(csvHeader.join(','));
+
+            for (const cond of conditions) {
+                html += `<h3 style="margin:18px 0 8px;font-size:14px;color:#374151">${cond}</h3>`;
+                html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums">';
+                html += '<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">';
+                html += '<th style="text-align:left;padding:8px 10px;font-weight:600">Model</th>';
+                for (const tt of taskTypes) {
+                    html += `<th style="text-align:center;padding:8px 6px;font-weight:600;min-width:44px">${tt}</th>`;
+                }
+                html += '<th style="text-align:center;padding:8px 6px;font-weight:700;border-left:2px solid #d1d5db">Macro</th>';
+                html += '<th style="text-align:center;padding:8px 6px;font-weight:600">Micro</th>';
+                html += '<th style="text-align:center;padding:8px 6px;font-weight:600">Acc</th>';
+                html += '</tr></thead><tbody>';
+
+                for (const model of models) {
+                    const shortModel = model.split('/').pop();
+                    html += `<tr style="border-bottom:1px solid #e5e7eb">`;
+                    html += `<td style="padding:8px 10px;font-weight:500;white-space:nowrap">${shortModel}</td>`;
+
+                    const catScores = [];
+                    const allScores = [];
+                    let nCorrect = 0, nTotal = 0;
+
+                    for (const tt of taskTypes) {
+                        const key = `${model}|${cond}|${tt}`;
+                        const scores = scoreMap[key] || [];
+                        const v = avg(scores);
+                        if (v !== null) catScores.push(v);
+                        allScores.push(...scores);
+                        // count accuracy
+                        const matchResults = results.filter(r => r.model === model && r.condition === cond && r.task_type === tt);
+                        nCorrect += matchResults.filter(r => r.is_correct).length;
+                        nTotal += matchResults.length;
+                        html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(v)}">${cellText(v)}</td>`;
+                    }
+
+                    const macro = catScores.length ? catScores.reduce((a,b) => a+b,0) / catScores.length : null;
+                    const micro = allScores.length ? allScores.reduce((a,b) => a+b,0) / allScores.length : null;
+                    const accuracy = nTotal ? nCorrect / nTotal : null;
+
+                    html += `<td style="text-align:center;padding:8px 6px;font-weight:700;border-left:2px solid #d1d5db;background:${cellColor(macro)}">${cellText(macro)}</td>`;
+                    html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(micro)}">${cellText(micro)}</td>`;
+                    html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(accuracy)}">${cellText(accuracy)}</td>`;
+                    html += '</tr>';
+
+                    // CSV row
+                    let csvRow = [shortModel, cond];
+                    for (const tt of taskTypes) {
+                        const key = `${model}|${cond}|${tt}`;
+                        const v = avg(scoreMap[key] || []);
+                        csvRow.push(v !== null ? (v * 100).toFixed(1) : '');
+                    }
+                    csvRow.push(macro !== null ? (macro * 100).toFixed(1) : '');
+                    csvRow.push(micro !== null ? (micro * 100).toFixed(1) : '');
+                    csvRow.push(accuracy !== null ? (accuracy * 100).toFixed(1) : '');
+                    csvLines.push(csvRow.join(','));
+                }
+
+                html += '</tbody></table></div>';
+            }
+
+            // Legend
+            html += `<div style="margin-top:14px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;color:#6b7280;line-height:1.7">
+                <strong>Scoring</strong>: Single-choice = 0 or 100 · Multi-select = F1 (0–100) · F-category = judge_score/5 (0–100)<br>
+                <strong>Macro</strong> = mean of per-category averages (each category weighted equally) ·
+                <strong>Micro</strong> = mean of all question scores ·
+                <strong>Acc</strong> = binary accuracy (exact match only)<br>
+                Cell colors: <span style="background:#dcfce7;padding:1px 6px;border-radius:3px">≥80</span>
+                <span style="background:#fef9c3;padding:1px 6px;border-radius:3px">≥50</span>
+                <span style="background:#fef2f2;padding:1px 6px;border-radius:3px">&lt;50</span>
+            </div>`;
+
+            _dashboardCsvData = csvLines.join('\n');
+            document.getElementById('dashboard-content').innerHTML = html;
+        }
+
+        function downloadDashboardCsv() {
+            if (!_dashboardCsvData) return;
+            const blob = new Blob([_dashboardCsvData], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'benchmark_dashboard.csv';
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         async function loadResults() {
@@ -1191,12 +1353,19 @@
 
             // Stats bar
             const acc = data.total > 0 ? (data.accuracy * 100).toFixed(1) + '%' : 'N/A';
+            const macroStr = data.total > 0 ? (data.macro_score * 100).toFixed(1) + '%' : 'N/A';
+            const microStr = data.total > 0 ? (data.micro_score * 100).toFixed(1) + '%' : 'N/A';
             const judgeStr = data.avg_judge_score !== null
-                ? `Avg Judge: ${data.avg_judge_score}/5` : '';
+                ? `Judge avg: ${data.avg_judge_score}/5` : '';
+            const detailStatus = (data.run_status === 'complete')
+                ? '' : '<span style="font-size:11px;padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:4px">Preliminary</span>';
             document.getElementById('results-stats-bar').innerHTML = `
                 <span>${data.total} results</span>
-                <span class="highlight">Accuracy: ${acc}</span>
+                <span class="highlight">Macro Score: ${macroStr}</span>
+                <span>Micro: ${microStr}</span>
+                <span>Accuracy: ${acc}</span>
                 ${judgeStr ? `<span>${judgeStr}</span>` : ''}
+                ${detailStatus}
             `;
 
             // Render list
@@ -1213,20 +1382,38 @@
                     <span>Type</span>
                     <span>Cond</span>
                     <span>Status</span>
+                    <span title="Continuous score: binary for single-choice, F1 for multi-select, judge/5 for F" style="text-align:right">Score</span>
                     <span title="get_parent / get_children calls" style="text-align:right">Nav</span>
                     <span title="validate_descriptors calls" style="text-align:right">Val</span>
                     <span title="Total LLM turns" style="text-align:right">Turns</span>
                     <span>Model</span>
                 </div>`;
 
+            // Sort by task_type for grouping
+            const sorted = [...data.results].sort((a, b) => (a.task_type || '').localeCompare(b.task_type || ''));
+
             let html = header;
-            for (const r of data.results) {
+            let currentGroup = null;
+            for (const r of sorted) {
+                // Group header when task_type changes
+                if (r.task_type !== currentGroup) {
+                    currentGroup = r.task_type;
+                    const groupResults = sorted.filter(x => x.task_type === currentGroup);
+                    const gCorrect = groupResults.filter(x => x.is_correct).length;
+                    const gAvgScore = groupResults.reduce((s, x) => s + (x.score || 0), 0) / groupResults.length;
+                    html += `<div style="padding:10px 14px;margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:13px;font-weight:600;color:#1d4ed8;display:flex;justify-content:space-between;align-items:center">
+                        <span>${currentGroup || 'Unknown'} (${groupResults.length} questions)</span>
+                        <span style="font-weight:400;font-size:12px;color:#3b82f6">Score: ${(gAvgScore * 100).toFixed(0)}% · Acc: ${gCorrect}/${groupResults.length}</span>
+                    </div>`;
+                }
                 const verdict = r.is_correct ? '✓' : (r.status === 'success' ? '✗' : '⚠');
                 const vColor  = r.is_correct ? '#16a34a' : r.status === 'success' ? '#dc2626' : '#d97706';
                 const vClass  = r.is_correct ? 'correct' : (r.status === 'success' ? 'wrong' : 'error');
                 const statusBadge = r.judge_score !== null
                     ? `<span class="badge badge-primary">${r.judge_score}/5</span>`
                     : `<span class="badge ${vClass==='correct'?'badge-correct':vClass==='wrong'?'badge-wrong':'badge-warning'}">${r.status}</span>`;
+                const scoreVal = (r.score * 100).toFixed(0);
+                const scoreColor = r.score >= 0.8 ? '#16a34a' : r.score >= 0.5 ? '#d97706' : r.score > 0 ? '#dc2626' : '#d1d5db';
 
                 html += `
                     <div class="result-row" onclick="openConvModal('${r.question_id}','${r.model}','${r.condition}')">
@@ -1235,6 +1422,7 @@
                         <span><span class="badge badge-primary">${r.task_type || ''}</span></span>
                         <span><span class="badge badge-condition">${r.condition}</span></span>
                         <span>${statusBadge}</span>
+                        <span class="col-num" style="color:${scoreColor};font-weight:600">${scoreVal}</span>
                         <span class="col-num ${r.reasoning_calls === 0 ? 'zero' : ''}">${r.reasoning_calls}</span>
                         <span class="col-num ${r.validation_calls === 0 ? 'zero' : ''}">${r.validation_calls}</span>
                         <span class="col-num">${r.total_turns}</span>

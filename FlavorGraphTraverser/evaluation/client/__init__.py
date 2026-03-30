@@ -18,7 +18,7 @@ Example:
     # For production
     client = create_client(
         client_type="openrouter",
-        model="anthropic/claude-sonnet-4.5"
+        model="anthropic/claude-sonnet-4.6"
     )
 
     # Query
@@ -62,7 +62,7 @@ def create_client(
         # OpenRouter client
         client = create_client(
             client_type="openrouter",
-            model="anthropic/claude-sonnet-4.5",
+            model="anthropic/claude-sonnet-4.6",
             api_key="sk-or-v1-..."
         )
     """

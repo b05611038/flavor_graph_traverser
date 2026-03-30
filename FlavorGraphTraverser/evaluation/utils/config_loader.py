@@ -21,7 +21,7 @@ def load_conditions_config(config_path: str = None) -> Dict[str, Any]:
         
     Example:
         >>> config = load_conditions_config()
-        >>> config["conditions"]["C0"]["system_prompt"]
+        >>> config["conditions"]["no_tool"]["system_prompt"]
         'You are an expert in coffee flavor analysis...'
     """
     if config_path is None:

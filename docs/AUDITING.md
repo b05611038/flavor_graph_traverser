@@ -14,10 +14,25 @@ python scripts/question_auditor_unified.py
 
 ## Interface
 
-The unified auditor at port 5000 has two modes:
+The unified auditor at port 5000 has three modes:
 
 - **Audit** (`/audit`) — review questions one by one
 - **Review** (`/review`) — browse confirmed questions, filterable by task type
+- **Results** (`/results`) — view LLM evaluation results with dashboard and detail views
+
+### Results Viewer
+
+Launch with experiment results:
+```bash
+python scripts/question_auditor_unified.py data/questions/all_questions_system.json --results results/experiment/results.json
+```
+
+The results mode has two sub-tabs:
+
+- **Dashboard** — model comparison table with per-category scores, macro/micro/accuracy columns, color-coded cells, and CSV download button
+- **Detail** — per-question results grouped by category, with Score/Nav/Val/Turns columns. Click any row to open the full conversation modal showing turn-by-turn history (system, user, assistant, tool messages, thinking blocks)
+
+Scores show a "Preliminary" badge when `run_status` is not `"complete"`.
 
 ## Review Actions
 

@@ -1,59 +1,38 @@
 # Experimental Conditions Configuration
-# Defines the 4 conditions (C0-C3) for the benchmark
+# Defines the 2 conditions (no_tool, tool) for the benchmark
+#
+# Design: single-axis (with vs. without tools).
+# CoT conditions were dropped because:
+#   - Reasoning models already think internally (CoT prompt is redundant)
+#   - Adding CoT only for non-reasoning models would confound cross-model comparison
+# All models are tested with default settings; reasoning vs non-reasoning
+# is an analysis dimension, not a controlled variable.
 
 conditions:
-  C0:
-    name: "Zero-shot Baseline"
-    description: "Direct prompting without tools or chain-of-thought"
+  no_tool:
+    name: "Baseline"
+    description: "Direct prompting without tools"
     tools_enabled: false
-    cot_enabled: false
     max_reasoning_calls: 0
     system_prompt: |
       The following is a question about the coffee flavor wheel hierarchy.
 
-  C1:
-    name: "CoT with Structural Hint"
-    description: "Chain-of-thought with hierarchical structure hint, no tools"
-    tools_enabled: false
-    cot_enabled: true
-    max_reasoning_calls: 0
-    system_prompt: |
-      The following is a question about the coffee flavor wheel hierarchy.
-      Flavor descriptors are organized in a hierarchical graph structure
-      (e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
-
-  C2:
-    name: "Tools Only"
-    description: "Tool-augmented without chain-of-thought"
+  tool:
+    name: "Tool-Augmented"
+    description: "Tool-augmented with graph traversal tools"
     tools_enabled: true
-    cot_enabled: false
     max_reasoning_calls: 5
     system_prompt: |
       The following is a question about the coffee flavor wheel hierarchy.
       You have access to a coffee flavor graph database via the provided tools.
       You may use the tools to look up relationships, or answer directly — your choice.
-      To find the ancestors of a flavor, call get_parent() repeatedly up the tree.
-      The answer options (e.g., 'fruity', 'spices', 'floral') are valid nodes you can query directly.
-
-  C3:
-    name: "CoT + Tools"
-    description: "Full tool-augmented with chain-of-thought"
-    tools_enabled: true
-    cot_enabled: true
-    max_reasoning_calls: 5
-    system_prompt: |
-      The following is a question about the coffee flavor wheel hierarchy.
-      You have access to a coffee flavor graph database via the provided tools.
-      You may use the tools to look up relationships, or answer directly — your choice.
-      Flavor descriptors are organized in a hierarchical graph structure
-      (e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
       To find the ancestors of a flavor, call get_parent() repeatedly up the tree.
       The answer options (e.g., 'fruity', 'spices', 'floral') are valid nodes you can query directly.
 
 # Common settings across all conditions
 common:
   temperature: 0  # For determinism
-  max_output_tokens: 1024
+  max_output_tokens: 4096
   timeout_seconds: 60
   answer_format: |
     When providing your final answer, use this exact format:

@@ -78,34 +78,34 @@ def main():
         if not client.is_available():
             print("  Ollama server not available, skipping...")
         else:
-            # Test C0 (zero-shot)
-            print("\nCondition C0 (Zero-shot baseline):")
-            evaluator_c0 = QuestionEvaluator(client, executor, "C0")
-            result_c0 = evaluator_c0.evaluate(question)
-            
-            print(f"  Model Answer: {result_c0.model_answer}")
-            print(f"  Correct: {result_c0.is_correct}")
-            print(f"  Status: {result_c0.status}")
-            print(f"  Tokens: {result_c0.metrics.total_tokens}")
-            print(f"  Latency: {result_c0.metrics.latency_ms}ms")
-            print(f"  Parse Pattern: {result_c0.parse_result.pattern_matched if result_c0.parse_result else 'N/A'}")
-            
-            # Test C2 (tools only)
-            print("\nCondition C2 (Tools only):")
-            evaluator_c2 = QuestionEvaluator(client, executor, "C2")
-            result_c2 = evaluator_c2.evaluate(question)
-            
-            print(f"  Model Answer: {result_c2.model_answer}")
-            print(f"  Correct: {result_c2.is_correct}")
-            print(f"  Status: {result_c2.status}")
-            print(f"  Reasoning Calls: {result_c2.metrics.reasoning_calls}")
-            print(f"  Validation Calls: {result_c2.metrics.validation_calls}")
-            print(f"  Total Turns: {result_c2.metrics.total_turns}")
-            print(f"  Tokens: {result_c2.metrics.total_tokens}")
-            print(f"  Latency: {result_c2.metrics.latency_ms}ms")
-            
+            # Test no_tool (baseline)
+            print("\nCondition no_tool (Baseline):")
+            evaluator_no_tool = QuestionEvaluator(client, executor, "no_tool")
+            result_no_tool = evaluator_no_tool.evaluate(question)
+
+            print(f"  Model Answer: {result_no_tool.model_answer}")
+            print(f"  Correct: {result_no_tool.is_correct}")
+            print(f"  Status: {result_no_tool.status}")
+            print(f"  Tokens: {result_no_tool.metrics.total_tokens}")
+            print(f"  Latency: {result_no_tool.metrics.latency_ms}ms")
+            print(f"  Parse Pattern: {result_no_tool.parse_result.pattern_matched if result_no_tool.parse_result else 'N/A'}")
+
+            # Test tool (tool-augmented)
+            print("\nCondition tool (Tool-Augmented):")
+            evaluator_tool = QuestionEvaluator(client, executor, "tool")
+            result_tool = evaluator_tool.evaluate(question)
+
+            print(f"  Model Answer: {result_tool.model_answer}")
+            print(f"  Correct: {result_tool.is_correct}")
+            print(f"  Status: {result_tool.status}")
+            print(f"  Reasoning Calls: {result_tool.metrics.reasoning_calls}")
+            print(f"  Validation Calls: {result_tool.metrics.validation_calls}")
+            print(f"  Total Turns: {result_tool.metrics.total_turns}")
+            print(f"  Tokens: {result_tool.metrics.total_tokens}")
+            print(f"  Latency: {result_tool.metrics.latency_ms}ms")
+
             print("\n" + "=" * 70)
-            print("Full Result (C2):")
+            print("Full Result (tool):")
             print("=" * 70)
             
             # Show full result as JSON

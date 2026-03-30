@@ -104,13 +104,10 @@ class TestToolDefinitions:
         tools = get_tool_definitions()
 
         validate_tool = [t for t in tools if t['function']['name'] == TOOL_VALIDATE][0]
-        assert 'FREE' in validate_tool['function']['description']
-        assert 'does not count' in validate_tool['function']['description']
+        assert 'No call limit' in validate_tool['function']['description']
 
         parent_tool = [t for t in tools if t['function']['name'] == TOOL_GET_PARENT][0]
-        assert 'REASONING' in parent_tool['function']['description']
-        assert '3-call limit' in parent_tool['function']['description']
+        assert 'budget' in parent_tool['function']['description']
 
         children_tool = [t for t in tools if t['function']['name'] == TOOL_GET_CHILDREN][0]
-        assert 'REASONING' in children_tool['function']['description']
-        assert '3-call limit' in children_tool['function']['description']
+        assert 'budget' in children_tool['function']['description']

@@ -6,16 +6,13 @@ Flexible script for running benchmark experiments with configurable parameters.
 
 Usage:
     # Small test (recommended first)
-    python scripts/run_experiment.py --models tinyllama --conditions C0 C3 --max-questions 10
-
-    # Medium test
-    python scripts/run_experiment.py --models tinyllama mistral --conditions C0 C2 C3
+    python scripts/run_experiment.py --models tinyllama --conditions no_tool tool --max-questions 10
 
     # Full benchmark (all questions, multiple models)
-    python scripts/run_experiment.py --models tinyllama mistral --conditions C0 C1 C2 C3 --output results/full_benchmark
+    python scripts/run_experiment.py --models tinyllama mistral --conditions no_tool tool --output results/full_benchmark
 
     # With OpenRouter
-    python scripts/run_experiment.py --client openrouter --models anthropic/claude-sonnet-4.5 --conditions C0 C3
+    python scripts/run_experiment.py --client openrouter --models anthropic/claude-sonnet-4.6 --conditions no_tool tool
 """
 
 import sys
@@ -60,8 +57,8 @@ def main():
         "--conditions",
         nargs="+",
         required=True,
-        choices=["C0", "C1", "C2", "C3"],
-        help="Conditions to test (C0=zero-shot, C1=CoT, C2=tools, C3=CoT+tools)"
+        choices=["no_tool", "tool"],
+        help="Conditions to test (no_tool=baseline, tool=tool-augmented)"
     )
 
     parser.add_argument(
@@ -116,6 +113,10 @@ def main():
         "--no-judge",
         action="store_true",
         help="Disable LLM judge for F-category questions"
+    )
+    parser.add_argument(
+        "--judge-model",
+        help="Override judge model ID (default: from models.yaml)"
     )
 
     parser.add_argument(
@@ -217,11 +218,17 @@ def main():
                 if entry.get("tool_mode") == "icl":
                     tool_modes[entry["id"]] = "icl"
 
-        # Judge config (only for OpenRouter; skip for local Ollama runs)
-        if not args.no_judge and args.client == "openrouter":
+        # Judge config
+        if not args.no_judge:
             judge_cfg = models_cfg.get("judge", {})
-            judge_model = judge_cfg.get("id")
-            judge_client_type = "openrouter"
+            judge_model = args.judge_model or judge_cfg.get("id")
+            # Use the same client type as the experiment, or override from config
+            judge_client_type = judge_cfg.get("client_type", args.client)
+
+    # CLI --judge-model overrides even if no models.yaml
+    if not args.no_judge and args.judge_model and not judge_model:
+        judge_model = args.judge_model
+        judge_client_type = args.client
 
     if tool_modes:
         icl_models = [k for k, v in tool_modes.items() if v == "icl"]
@@ -260,6 +267,7 @@ def main():
             api_key=args.api_key,
             judge_model=judge_model,
             judge_client_type=judge_client_type,
+            judge_base_url=args.base_url,
             judge_api_key=args.api_key,
             tool_modes=tool_modes or None,
         )

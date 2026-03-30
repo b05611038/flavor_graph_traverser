@@ -196,3 +196,66 @@ def parse_multiselect_answer(response_text: str) -> MultiSelectParseResult:
                 return result
 
     return MultiSelectParseResult(None, "No match", None)
+
+
+def compute_question_score(
+    model_answer,
+    correct_answer,
+    is_correct: bool,
+    judge_score: int = None,
+    status: str = "success",
+) -> float:
+    """
+    Compute a 0–1 score for a single question.
+
+    Scoring rules:
+    - Single-choice (A2, A3, E1, E2, E3): 0 or 1 (binary)
+    - Multi-select (A1, A4, A5): F1 between predicted and correct sets
+    - F-category: judge_score / 5 (continuous 0–1)
+    - parse_error / api_error: 0
+
+    Args:
+        model_answer: Model's answer (str, list, or None)
+        correct_answer: Ground truth (str or list)
+        is_correct: Binary correctness (used for single-choice)
+        judge_score: Judge score 0–5 for F-category (None for A/E)
+        status: Evaluation status
+
+    Returns:
+        Float score in [0, 1]
+
+    Examples:
+        >>> compute_question_score("B", "B", True)
+        1.0
+        >>> compute_question_score(["A", "C"], ["B", "C", "D"], False)
+        0.4
+        >>> compute_question_score(None, None, False, judge_score=4)
+        0.8
+    """
+    # F-category: use judge score directly
+    if judge_score is not None:
+        return judge_score / 5.0
+
+    # Error states get 0
+    if status in ("parse_error", "api_error", "tool_error", "no_judge"):
+        return 0.0
+
+    # Multi-select: F1 score
+    if isinstance(correct_answer, list):
+        if model_answer is None or not isinstance(model_answer, list):
+            return 0.0
+        pred = set(model_answer)
+        gold = set(correct_answer)
+        if not gold and not pred:
+            return 1.0  # both empty = correct
+        if not gold or not pred:
+            return 0.0
+        tp = len(pred & gold)
+        precision = tp / len(pred) if pred else 0.0
+        recall = tp / len(gold) if gold else 0.0
+        if precision + recall == 0:
+            return 0.0
+        return 2 * precision * recall / (precision + recall)
+
+    # Single-choice: binary
+    return 1.0 if is_correct else 0.0

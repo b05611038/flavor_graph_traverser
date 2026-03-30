@@ -15,10 +15,12 @@ from .tools import GraphToolExecutor, get_tool_definitions, TOOL_VALIDATE, TOOL_
 from .utils import (
     parse_answer, AnswerParseResult,
     parse_multiselect_answer, MultiSelectParseResult,
+    compute_question_score,
     load_conditions_config,
     build_icl_system_prompt, format_icl_tool_result, parse_icl_tool_call,
 )
 from .judge import LLMJudge, JudgeResult
+from prompts import load_prompt
 
 # Score threshold for F-category: score >= this counts as "correct"
 JUDGE_PASS_THRESHOLD = 3
@@ -74,6 +76,10 @@ class EvaluationResult:
     judge_score: Optional[int] = None
     judge_result: Optional[Dict[str, Any]] = None  # serializable JudgeResult
 
+    # Continuous score (0–1): binary for single-choice, F1 for multi-select,
+    # judge_score/5 for F-category
+    score: float = 0.0
+
 
 class QuestionEvaluator:
     """
@@ -82,9 +88,9 @@ class QuestionEvaluator:
     Implements turn-based evaluation loop with tool call tracking.
     
     Example:
-        >>> client = create_client("openrouter", "anthropic/claude-sonnet-4.5")
+        >>> client = create_client("openrouter", "anthropic/claude-sonnet-4.6")
         >>> executor = GraphToolExecutor(graph)
-        >>> evaluator = QuestionEvaluator(client, executor, "C2")
+        >>> evaluator = QuestionEvaluator(client, executor, "tool")
         >>> result = evaluator.evaluate(question)
     """
     
@@ -103,7 +109,7 @@ class QuestionEvaluator:
         Args:
             client: LLM client instance (the model being evaluated)
             executor: GraphToolExecutor instance
-            condition: Condition name ("C0", "C1", "C2", "C3")
+            condition: Condition name ("no_tool", "tool")
             config: Optional config dict (loads from YAML if None)
             judge_client: Optional LLM client for F-category judge evaluation.
                           If None, F-category questions are run but not judged
@@ -161,7 +167,7 @@ class QuestionEvaluator:
             parse_result = AnswerParseResult(None, None, None)
 
             if is_f_category:
-                # F-category: multi-turn with tools if C2/C3, else single-turn
+                # F-category: multi-turn with tools if tool condition, else single-turn
                 if self.condition_config["tools_enabled"]:
                     if self.tool_mode == "icl":
                         model_response_text, _, metrics, errors = self._evaluate_with_icl_tools(
@@ -247,6 +253,15 @@ class QuestionEvaluator:
             # Calculate latency
             metrics.latency_ms = int((time.time() - start_time) * 1000)
 
+            # Compute continuous score (0–1)
+            score = compute_question_score(
+                model_answer=model_answer,
+                correct_answer=question.get("correct_answer"),
+                is_correct=is_correct,
+                judge_score=judge_score,
+                status=status,
+            )
+
             # Build full conversation history now that all turns are complete
             conversation_history = [self._message_to_dict(m) for m in messages]
 
@@ -269,6 +284,7 @@ class QuestionEvaluator:
                 model_response_text=model_response_text,
                 judge_score=judge_score,
                 judge_result=judge_result_dict,
+                score=score,
             )
 
         except Exception as e:
@@ -387,11 +403,7 @@ class QuestionEvaluator:
         system_prompt = self.condition_config["system_prompt"].rstrip()
         if self.condition_config["tools_enabled"]:
             max_calls = self.condition_config["max_reasoning_calls"]
-            system_prompt += (
-                f"\nTool call budget: you may call get_parent and get_children "
-                f"up to {max_calls} times in total (shared budget). "
-                f"validate_descriptors has no call limit."
-            )
+            system_prompt += "\n" + load_prompt("tool_budget", max_calls=max_calls)
         messages = [Message(role="system", content=system_prompt)]
         
         # User message with question
@@ -407,21 +419,17 @@ class QuestionEvaluator:
 
         if len(option_keys) == 0:
             # Open-ended question (F_flavor_description)
-            answer_format = "Provide your answer in a clear, detailed response."
+            answer_format = load_prompt("answer_format_open")
         elif is_multiselect:
             # A1, A4: select all that apply; NONE if none apply
             options_list = ", ".join(option_keys)
-            answer_format = (
-                f'You MUST end your response with exactly this format — no other format is accepted:\n'
-                f'"Therefore, I select (X, Y, ...)" listing all correct options from {options_list}, '
-                f'or "Therefore, I select (NONE)" if none apply.'
-            )
+            answer_format = load_prompt("answer_format_multi", options_list=options_list)
         elif len(option_keys) == 2:
             options_list = f"{option_keys[0]} or {option_keys[1]}"
-            answer_format = f'You MUST end your response with exactly this format — no other format is accepted:\n"Therefore, I select (X)" where X is {options_list}.'
+            answer_format = load_prompt("answer_format_single", options_list=options_list)
         else:
             options_list = ", ".join(option_keys[:-1]) + f", or {option_keys[-1]}"
-            answer_format = f'You MUST end your response with exactly this format — no other format is accepted:\n"Therefore, I select (X)" where X is {options_list}.'
+            answer_format = load_prompt("answer_format_single", options_list=options_list)
 
         user_message = f"{question_text}\n\n{options_text}\n\n{answer_format}"
         messages.append(Message(role="user", content=user_message))
@@ -433,7 +441,7 @@ class QuestionEvaluator:
         messages: List[Message],
         metrics: EvaluationMetrics
     ) -> Tuple[Optional[str], AnswerParseResult, EvaluationMetrics, List[Dict]]:
-        """Evaluate with direct prompting (C0, C1 - no tools)."""
+        """Evaluate with direct prompting (no_tool condition)."""
         errors = []
         
         try:
@@ -472,7 +480,7 @@ class QuestionEvaluator:
         question: Dict[str, Any],
         metrics: EvaluationMetrics
     ) -> Tuple[Optional[str], AnswerParseResult, EvaluationMetrics, List[Dict]]:
-        """Evaluate with tool-augmented loop (C2, C3)."""
+        """Evaluate with tool-augmented loop (tool condition)."""
         errors = []
         max_reasoning_calls = self.condition_config["max_reasoning_calls"]
         
@@ -570,12 +578,7 @@ class QuestionEvaluator:
         metrics.total_turns += 1
         max_calls = self.condition_config["max_reasoning_calls"]
         format_hint = self._answer_format_hint(messages)
-        emphatic_content = (
-            f"You have used your tool call budget ({max_calls} reasoning calls). "
-            f"No more tool calls are allowed. "
-            f"Based on the information gathered above, you MUST provide your final answer now."
-            + format_hint
-        )
+        emphatic_content = load_prompt("forced_answer", max_calls=max_calls) + format_hint
         emphatic_msg = Message(role="user", content=emphatic_content)
         messages.append(emphatic_msg)
 
@@ -606,7 +609,7 @@ class QuestionEvaluator:
 
         # Fallback: context surgery — model is stuck in tool mode, reset context
         metrics.total_turns += 1
-        fallback_content = "Provide your final answer now." + format_hint
+        fallback_content = load_prompt("forced_answer_fallback") + format_hint
         fallback_msg = Message(role="user", content=fallback_content)
         clean_messages = messages[:2] + [fallback_msg]
         messages.append(fallback_msg)
@@ -728,7 +731,7 @@ class QuestionEvaluator:
 
         # Force final answer
         metrics.total_turns += 1
-        icl_messages.append(Message(role="user", content="Provide your final answer now." + self._answer_format_hint(messages)))
+        icl_messages.append(Message(role="user", content=load_prompt("forced_answer_fallback") + self._answer_format_hint(messages)))
         try:
             response = self.client.query(
                 icl_messages,

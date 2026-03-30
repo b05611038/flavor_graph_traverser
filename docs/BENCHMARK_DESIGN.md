@@ -18,23 +18,37 @@ Questions are generated from the larger System Graph. LLMs are given tool access
 
 ## Experimental Conditions
 
-| Condition | Tools | CoT | Max Reasoning Calls | Description |
-|---|---|---|---|---|
-| **C0** | ✗ | ✗ | — | Zero-shot baseline |
-| **C1** | ✗ | ✓ | — | CoT with structural hint |
-| **C2** | ✓ | ✗ | 3 | Tools only |
-| **C3** | ✓ | ✓ | 3 | CoT + Tools (full) |
+| Condition | Tools | Max Reasoning Calls | Description |
+|---|---|---|---|
+| **no_tool** | ✗ | — | Baseline (no tool access) |
+| **tool** | ✓ | 5 | Tool-augmented |
 
-Key comparisons:
-- **C2 vs C0**: Benefit of tool access
-- **C1 vs C0**: Benefit of structured reasoning alone
-- **C3 vs C2**: Does CoT improve tool-augmented reasoning?
+Key comparison:
+- **tool vs no_tool**: Does tool access improve hierarchical reasoning?
 
-**CoT structural hint** (used in C1, C3):
-```
-Flavor descriptors are organized in a hierarchical graph structure
-(e.g., 'strawberry' → 'berry' → 'fruity'). Let's think step-by-step.
-```
+### Design Rationale
+
+The benchmark uses a **single-axis design**: with vs. without tools. Earlier designs included a CoT axis (C1: CoT-only, C3: CoT + tools), but this was dropped for two reasons:
+
+1. **Reasoning models** (o1, o3, DeepSeek R1, QwQ) perform chain-of-thought internally — adding a CoT prompt is redundant.
+2. **Non-reasoning models** (Llama, Mistral, GPT-4o) should not receive CoT prompts that reasoning models don't need — this would confound the tool-access comparison across model types.
+
+By keeping `no_tool` and `tool` only, the same conditions apply to all models regardless of whether they reason internally, enabling fair cross-model comparison. Models are tested with their **default settings** (reasoning models reason, non-reasoning models don't). The two model types are reported as **separate tracks** in analysis:
+
+- **Track 1 (Non-reasoning):** Llama, Mistral, GPT-4o, etc.
+- **Track 2 (Reasoning):** o1/o3, DeepSeek R1, QwQ, gpt-oss, etc.
+
+This halves the evaluation count (550 instead of 1100 per model) while preserving the core research question.
+
+### System Prompt Design
+
+System prompts follow MMLU/τ-bench conventions — neutral framing without expert role claims:
+- **no_tool**: `"The following is a question about the coffee flavor wheel hierarchy."` (MMLU-style subject context)
+- **tool**: Adds `"You have access to a coffee flavor graph database via the provided tools. You may use the tools to look up relationships, or answer directly — your choice."` (τ-bench-style capability description, opt-in rather than instructed)
+
+This design isolates the tool contribution: the model is never told it's an "expert," so `tool` vs `no_tool` differences reflect tool access, not prompting authority. The tool call budget is dynamically injected into the system prompt (see `prompts/tool_budget.txt`).
+
+All prompts are externalized to `prompts/*.txt` files for reproducibility. See `configs/conditions.yaml` for the full condition definitions.
 
 ## Task Types
 
@@ -101,37 +115,45 @@ LLMs query the Tool Graph via function calling. Three tools are exposed:
 
 | Tool | Purpose | Cost | Limit |
 |---|---|---|---|
-| `validate_descriptors` | Check if descriptors exist in graph | **Free** | Unlimited, max 10 items/call |
-| `get_parent` | Get parent node(s) of a descriptor | **Counted** | Shared 3-call limit |
-| `get_children` | Get child node(s) of a descriptor | **Counted** | Shared 3-call limit |
+| `validate_descriptors` | Check if descriptors exist in graph | **Free** | No call limit, max 10 items/call |
+| `get_parent` | Get parent node(s) of a descriptor | **Counted** | Shared 5-call budget |
+| `get_children` | Get child node(s) of a descriptor | **Counted** | Shared 5-call budget |
+
+Tool descriptions explicitly state:
+- `validate_descriptors`: "No call limit — use freely. Validation is optional: you can call get_parent or get_children directly without validating first."
+- `get_parent`/`get_children`: "Counts toward your reasoning call budget (shared)."
+
+This prevents the validate-then-give-up anti-pattern observed in early testing, where models would validate question descriptors (which are excluded from the tool graph), get `invalid`, and stop. Tool descriptions are defined in `FlavorGraphTraverser/evaluation/tools/definitions.py`.
 
 **Fairness principle:** Validation reveals only existence, not relationships. Name matching is separated from reasoning ability.
 
-## Turn Structure (C2, C3)
+**ICL mode:** Models without native function calling (DeepSeek, Llama-4 Maverick, Nemotron) use text-based tool simulation. Tool instructions and a traversal example are injected into the system prompt (see `prompts/icl_tools.txt`).
+
+## Turn Structure (tool condition)
+
+The model can call tools freely within its budget. `validate_descriptors` calls are unlimited; `get_parent`/`get_children` share a 5-call budget.
 
 ```
-Turn 1: Initial Query
-  - LLM receives question + tool definitions
-  - Can call validate_descriptors (FREE)
-  - Can call get_parent/get_children (#1)
-  - Can answer directly
+Turns 1–N: Tool Loop
+  - LLM receives question + tool definitions + budget note
+  - Can call validate_descriptors (no limit)
+  - Can call get_parent/get_children (counts toward 5-call budget)
+  - Can answer directly at any turn
 
-Turn 2: After Tool Result
-  - LLM sees question + full history
-  - Can call validate_descriptors (FREE)
-  - Can call get_parent/get_children (#2)
-  - Can answer directly
+Forced Answer: After 5 Reasoning Calls OR Model Gives Up
+  Stage 1 — Emphatic message with full context:
+    "You have used your tool call budget (5 reasoning calls).
+     No more tool calls are allowed. Based on the information
+     gathered above, you MUST provide your final answer now."
+    Sent with tool_choice="none" so model can synthesise tool findings.
 
-Turn 3: After 2nd Tool Result
-  - Same as Turn 2
-  - Can call get_parent/get_children (#3)
-
-Forced Answer: After 3 Reasoning Calls
-  - System: "Provide your final answer now"
-  - LLM MUST answer (no more tool calls)
+  Stage 2 — Fallback (if Stage 1 returns empty):
+    Context surgery: strip all tool history, send clean
+    [system, original question, "Provide your final answer now."]
+    This handles models that get stuck in tool-calling mode.
 ```
 
-Answer can come at any turn; forced after 3 reasoning calls.
+Answer format instructions use imperative framing (`"You MUST end your response with exactly this format"`) to ensure format compliance without relying on expert role prompting. See `prompts/answer_format_*.txt`.
 
 ## Answer Extraction
 
@@ -147,6 +169,55 @@ patterns = [
 # None found → parse_error → marked as incorrect
 ```
 
+## Scoring
+
+Each question produces a continuous **0–1 score**:
+
+| Question type | Scoring | Example |
+|---|---|---|
+| **Single-choice** (A2, A3, E1, E2, E3) | Binary: 0 or 1 | Correct = 1, wrong = 0 |
+| **Multi-select** (A1, A4, A5) | F1 between predicted and correct sets | Correct={B,C,D}, model={B,C} → F1=0.80 |
+| **F-category** (open-ended) | judge_score / 5 | Judge gives 4 → score = 0.80 |
+
+Two aggregate scores:
+
+- **Macro score** (primary): Mean of per-category averages. Each of the 9 categories (A1–A5, E1–E3, F) contributes equally regardless of question count — F's 15 questions carry the same weight as A1's 50.
+- **Micro score**: Mean of all individual question scores. Favors categories with more questions.
+- **Accuracy** (binary): Fraction of exactly correct answers. Reported for comparison but not the primary metric.
+
+Scoring is implemented in `FlavorGraphTraverser/evaluation/utils/answer_parser.py:compute_question_score()`.
+
+### LLM-as-a-Judge (F-category)
+
+F-category questions are scored by a **multi-judge panel** on a 0–5 rubric. Each judge receives:
+1. The original question text
+2. The model's response
+3. A per-question rubric and evaluation criteria (from question metadata)
+4. Closing instruction: "Evaluate the response above and provide your score. End with: Score: N"
+
+**Judge panel** (none are in the tested model set, avoiding self-judging bias):
+
+| Judge | Model | Provider |
+|-------|-------|----------|
+| Judge 1 | Claude Opus 4.6 | Anthropic |
+| Judge 2 | Gemini 3.1 Pro | Google |
+| Judge 3 | GPT-5.4 Pro | OpenAI (optional) |
+
+Using multiple judges from different providers enables **inter-judge agreement** reporting (Cohen's kappa / Krippendorff's alpha) and eliminates single-model bias. The final F-category score is the mean across judges.
+
+**Workflow**: Run evaluation once with `--no-judge`, then score F-category responses with each judge model separately. This avoids re-running evaluations and allows judge comparison on identical model outputs.
+
+```bash
+# Step 1: Run evaluation (no judging)
+python scripts/run_experiment.py --conditions no_tool tool --models ... --no-judge
+
+# Step 2: Score with each judge
+python scripts/run_experiment.py --conditions no_tool tool --models ... --judge-model anthropic/claude-opus-4.6
+python scripts/run_experiment.py --conditions no_tool tool --models ... --judge-model google/gemini-3.1-pro-preview
+```
+
+Judge prompts are in `prompts/judge_system.txt` and `prompts/judge_closing.txt`. A mean score ≥ 3 counts as `is_correct=True` for binary accuracy reporting.
+
 ## Question Set Status
 
 | Task | Target | Confirmed | Format |
@@ -159,28 +230,33 @@ patterns = [
 | E1 | 30 | 30 | 4-choice ranking |
 | E2 | 30 | 30 | 3-choice single answer |
 | E3 | 20 | 20 | 4-choice single answer |
-| F  | 16 | 16 | Open-ended (LLM-judged, 0-5 scoring) |
-| **Total** | **276** | **276** | |
+| F  | 15 | 15 | Open-ended (LLM-judged, 0–5 scoring) |
+| **Total** | **275** | **275** | |
 
 ## Models
 
 **11 models total (4 closed-source, 7 open-source)**
 
-| Provider | Model | OpenRouter ID |
-|---|---|---|
-| Anthropic | Claude Sonnet 4.5 | `anthropic/claude-sonnet-4.5` |
-| OpenAI | GPT-5.2 | `openai/gpt-5.2` |
-| Google | Gemini 3 Flash | `google/gemini-3-flash-preview` |
-| xAI | Grok 4.1 Fast | `x-ai/grok-4.1-fast` |
-| OpenAI | GPT-OSS 120B | `openai/gpt-oss-120b` |
-| Alibaba | Qwen3-235B-A22B | `qwen/qwen3-235b-a22b` |
-| Moonshot | Kimi K2 | `moonshotai/kimi-k2` |
-| Meta | Llama 4 Maverick | `meta-llama/llama-4-maverick` |
-| DeepSeek | DeepSeek Chat | `deepseek/deepseek-chat` |
-| Mistral | Mistral Medium 3 | `mistralai/mistral-medium-3` |
-| NVIDIA | Nemotron Super 49B | `nvidia/llama-3.3-nemotron-super-49b-v1` |
+| Provider | Model | OpenRouter ID | Reasoning | Tool Mode |
+|---|---|---|---|---|
+| Anthropic | Claude Sonnet 4.6 | `anthropic/claude-sonnet-4.6` | Yes | Native |
+| OpenAI | GPT-5.4 | `openai/gpt-5.4` | Yes | Native |
+| Google | Gemini 3 Flash | `google/gemini-3-flash-preview` | Yes | Native |
+| xAI | Grok 4.1 Fast | `x-ai/grok-4.1-fast` | Yes | Native |
+| OpenAI | GPT-OSS 120B | `openai/gpt-oss-120b` | Yes | Native |
+| Alibaba | Qwen3.5 397B | `qwen/qwen3.5-397b-a17b` | Yes | Native |
+| Moonshot | Kimi K2.5 | `moonshotai/kimi-k2.5` | Yes | Native |
+| Meta | Llama 4 Maverick | `meta-llama/llama-4-maverick` | No | ICL |
+| DeepSeek | DeepSeek V3.2 | `deepseek/deepseek-v3.2` | Yes | Native |
+| Mistral | Mistral Medium 3.1 | `mistralai/mistral-medium-3.1` | No | Native |
+| NVIDIA | Nemotron 3 Super 120B | `nvidia/nemotron-3-super-120b-a12b` | Yes | ICL |
 
-**Judge:** Claude Opus 4.5 (for F-category questions)
+**Judge panel** (multi-judge, none overlap with tested models):
+- Claude Opus 4.6 (`anthropic/claude-opus-4.6`)
+- Gemini 3.1 Pro (`google/gemini-3.1-pro-preview`)
+- GPT-5.4 Pro (`openai/gpt-5.4-pro`) — optional, high cost
+
+See `docs/COST.md` for detailed budget breakdown.
 
 ## Metrics
 
@@ -189,8 +265,8 @@ For each evaluated question, recorded fields include:
 ```json
 {
   "question_id": "A1_001",
-  "model": "anthropic/claude-sonnet-4.5",
-  "condition": "C2",
+  "model": "anthropic/claude-sonnet-4.6",
+  "condition": "tool",
   "result": {
     "model_answer": "B",
     "correct_answer": "B",
@@ -237,7 +313,7 @@ Each evaluation turn is displayed as plain text:
 
 ```
 ─────────────────────────────────────────────────────────────────
-[Q: A1_001] Model: claude-sonnet-4.5 | Condition: C2 | Turn: 1
+[Q: A1_001] Model: claude-sonnet-4.6 | Condition: tool | Turn: 1
 ─────────────────────────────────────────────────────────────────
 >> USER:
 Question: Which root category does 'jasmine' belong to?
@@ -265,24 +341,23 @@ Jasmine's parent is floral. Therefore, I select (B).
 
 ## Expected Results
 
-**Table 1:** Accuracy (%) by Model × Condition (C0–C3)
+**Table 1:** Accuracy (%) by Model × Condition (no_tool, tool), grouped by model type (reasoning vs non-reasoning)
 **Table 2:** Per-task accuracy breakdown
 **Figure 1:** Accuracy vs. tool call count
 **Figure 2:** Token cost vs. accuracy trade-off
 
-**Success criteria:** C3 achieves ≥90% of C0+full-context baseline accuracy with significantly fewer tokens.
+**Success criteria:** The `tool` condition achieves ≥90% of full-context baseline accuracy with significantly fewer tokens, especially for non-reasoning models.
 
 ## Budget Estimate
 
 ```
-Total runs: 276 questions × 4 conditions × 11 models = 12,144 runs
-Est. tokens/run: ~800 average
-Total tokens: ~9.7M
+Total evaluations: 275 questions × 2 conditions × 11 models = 6,050
+Judge calls: 15 F-questions × 2 conditions × 11 models = 330 per judge
 
-Cost breakdown:
-- Closed-source:    ~$15–25
-- Open-source:      ~$9–19
-- Judge (F-cat.):   ~$5–8
+Evaluation cost:  ~$50  (24M tokens)
+Judge cost:       ~$9   (2 judges) or ~$54 (3 judges)
 
-Total: ~$35–55
+Total: ~$59 (2 judges) or ~$104 (3 judges)
 ```
+
+See `docs/COST.md` for detailed per-model breakdown.

@@ -1,0 +1,1 @@
+Tool call budget: you may call get_parent and get_children up to {max_calls} times in total (shared budget). validate_descriptors has no call limit.

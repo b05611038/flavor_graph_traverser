@@ -5,7 +5,7 @@ This directory contains YAML configuration files for the FlavorGraphTraverser ev
 ## Files
 
 - **`models.yaml`**: Model definitions (closed-source, open-source, local, judge)
-- **`conditions.yaml`**: Experimental conditions (C0-C3) with prompts
+- **`conditions.yaml`**: Experimental conditions (no_tool, tool) with prompts
 - **`experiment.yaml`**: Main experiment configuration
 
 ## Quick Start
@@ -58,8 +58,8 @@ Defines all models to test.
 
 ```yaml
 closed_source:
-  - id: anthropic/claude-sonnet-4.5  # OpenRouter model ID
-    name: Claude Sonnet 4.5          # Display name
+  - id: anthropic/claude-sonnet-4.6  # OpenRouter model ID
+    name: Claude Sonnet 4.6          # Display name
     provider: Anthropic              # Provider name
     pricing:
       input: 3.0                     # $ per 1M input tokens
@@ -82,8 +82,8 @@ local:
     notes: For debugging only
 
 judge:
-  id: anthropic/claude-opus-4.5      # Model for F-category judging
-  name: Claude Opus 4.5
+  id: anthropic/claude-opus-4.6      # Model for F-category judging
+  name: Claude Opus 4.6
   provider: Anthropic
 ```
 
@@ -100,24 +100,23 @@ Set `enabled: false` to skip a model without deleting its configuration:
 
 ### conditions.yaml
 
-Defines the 4 experimental conditions.
+Defines the 2 experimental conditions (single-axis design: with vs. without tools).
 
 #### Structure
 
 ```yaml
 conditions:
-  C0:
-    name: "Zero-shot Baseline"
-    description: "Direct prompting without tools or CoT"
+  no_tool:
+    name: "Baseline"
+    description: "Direct prompting without tools"
     tools_enabled: false
-    cot_enabled: false
     max_reasoning_calls: 0
     system_prompt: |
       Your system prompt here...
 
 common:
   temperature: 0              # For determinism
-  max_output_tokens: 1024
+  max_output_tokens: 4096
   timeout_seconds: 60
   answer_format: |
     Answer format instructions...
@@ -125,26 +124,31 @@ common:
 
 #### Condition Definitions
 
-| Condition | Tools | CoT | Max Calls | Purpose |
-|-----------|-------|-----|-----------|---------|
-| **C0** | ✗ | ✗ | 0 | Zero-shot baseline |
-| **C1** | ✗ | ✓ | 0 | CoT with structural hint |
-| **C2** | ✓ | ✗ | 3 | Tools only |
-| **C3** | ✓ | ✓ | 3 | Full tool-augmented + CoT |
+| Condition | Tools | Max Calls | Purpose |
+|-----------|-------|-----------|---------|
+| **no_tool** | ✗ | 0 | Baseline (no tool access) |
+| **tool** | ✓ | 5 | Tool-augmented |
 
-#### Customizing Prompts
+See `docs/BENCHMARK_DESIGN.md` for design rationale.
 
-Edit the `system_prompt` field for each condition:
+#### System Prompt Design
+
+System prompts use neutral MMLU/τ-bench style framing (no expert role):
 
 ```yaml
-  C3:
+  no_tool:
     system_prompt: |
-      You are an expert in coffee flavor analysis...
+      The following is a question about the coffee flavor wheel hierarchy.
 
-      [Your custom instructions here]
+  tool:
+    system_prompt: |
+      The following is a question about the coffee flavor wheel hierarchy.
+      You have access to a coffee flavor graph database via the provided tools.
+      You may use the tools to look up relationships, or answer directly — your choice.
+      ...
 ```
 
-**Note**: Keep the answer format instruction consistent across conditions.
+The tool call budget is dynamically injected into the system prompt at runtime (see `prompts/tool_budget.txt`). Answer format instructions are in `prompts/answer_format_*.txt`.
 
 ---
 
@@ -205,7 +209,7 @@ runs:
     description: "Quick test with local ollama"
     client_type: "ollama"
     models: ["tinyllama"]
-    conditions: ["C0", "C2"]
+    conditions: ["no_tool", "tool"]
     max_questions: 5
     question_types: ["A1"]
 
@@ -215,7 +219,7 @@ runs:
     models:
       - "openai/gpt-3.5-turbo"
       - "anthropic/claude-haiku"
-    conditions: ["C0", "C2", "C3"]
+    conditions: ["no_tool", "tool"]
     max_questions: 10
     question_types: ["A1", "A2", "E1"]
 
@@ -223,7 +227,7 @@ runs:
     enabled: false
     client_type: "openrouter"
     models: "all"  # All enabled models from models.yaml
-    conditions: ["C0", "C1", "C2", "C3"]
+    conditions: ["no_tool", "tool"]
     max_questions: null  # All questions
     question_types: null  # All types
 ```
@@ -325,7 +329,7 @@ runs:
     enabled: true
     client_type: "ollama"
     models: ["tinyllama"]
-    conditions: ["C0", "C2"]
+    conditions: ["no_tool", "tool"]
     max_questions: 5
 ```
 
@@ -349,7 +353,7 @@ runs:
     models:
       - "openai/gpt-3.5-turbo"
       - "anthropic/claude-haiku"
-    conditions: ["C0", "C2", "C3"]
+    conditions: ["no_tool", "tool"]
     max_questions: 10
 ```
 
@@ -378,7 +382,7 @@ runs:
   full:
     enabled: true
     models: "all"
-    conditions: ["C0", "C1", "C2", "C3"]
+    conditions: ["no_tool", "tool"]
     max_questions: null
 ```
 
@@ -419,8 +423,8 @@ models:
 **For high-quality results:**
 ```yaml
 models:
-  - "anthropic/claude-sonnet-4.5"
-  - "openai/gpt-5.2"
+  - "anthropic/claude-sonnet-4.6"
+  - "openai/gpt-5.4"
 ```
 
 ### 4. Caching Strategy

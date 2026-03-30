@@ -11,20 +11,10 @@ from dataclasses import dataclass
 
 from ..client.base import BaseClient, Message
 from ..utils.answer_parser import parse_judge_score, JudgeScoreResult
+from prompts import load_prompt
 
 
-JUDGE_SYSTEM_PROMPT = """\
-You are an expert coffee flavor evaluator assessing responses to professional \
-coffee flavor reasoning questions. Your task is to score a given response \
-according to the provided rubric.
-
-Be objective and consistent. Base your score only on the reasoning quality \
-demonstrated in the response relative to the rubric criteria. Do not reward \
-or penalize stylistic choices unrelated to the reasoning.
-
-Always end your evaluation with a line in this exact format:
-Score: N
-where N is an integer from 0 to 5."""
+JUDGE_SYSTEM_PROMPT = load_prompt("judge_system")
 
 
 @dataclass
@@ -48,13 +38,13 @@ class LLMJudge:
     - Optional judge instructions
 
     Example:
-        >>> judge_client = create_client("openrouter", "anthropic/claude-opus-4-5")
+        >>> judge_client = create_client("openrouter", "anthropic/claude-opus-4.6")
         >>> judge = LLMJudge(judge_client)
         >>> result = judge.evaluate(question, model_response)
         >>> result.score  # 0-5
     """
 
-    def __init__(self, client: BaseClient, temperature: float = 0.0, max_tokens: int = 512):
+    def __init__(self, client: BaseClient, temperature: float = 0.0, max_tokens: int = 1024):
         """
         Initialize judge.
 
@@ -145,9 +135,6 @@ class LLMJudge:
         if judge_instructions:
             parts.append("## Judge Instructions\n" + judge_instructions)
 
-        parts.append(
-            "Evaluate the response above and provide your score.\n"
-            "End with: Score: N"
-        )
+        parts.append(load_prompt("judge_closing"))
 
         return "\n\n".join(parts)

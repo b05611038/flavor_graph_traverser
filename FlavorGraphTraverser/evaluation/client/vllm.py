@@ -107,7 +107,14 @@ class VLLMClient(BaseClient):
         raw_content = message.get("content", "") or ""
         tool_calls = message.get("tool_calls")
 
-        clean_content, thinking_content = normalize_response(raw_content)
+        # vLLM surfaces reasoning-model thinking in message.reasoning
+        # (same convention as OpenRouter). Capture it so we don't lose it.
+        provider_thinking = message.get("reasoning") or message.get("reasoning_content")
+
+        clean_content, tag_thinking = normalize_response(raw_content)
+
+        # Provider-level reasoning takes priority over inline <think> tags
+        thinking_content = provider_thinking or tag_thinking
 
         usage = None
         if "usage" in response:

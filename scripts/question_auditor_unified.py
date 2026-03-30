@@ -691,6 +691,7 @@ def get_results():
             'model_answer': r.get('model_answer'),
             'correct_answer': r.get('correct_answer'),
             'judge_score': r.get('judge_score'),
+            'score': r.get('score', 0.0),
             'reasoning_calls': metrics.get('reasoning_calls', 0),
             'validation_calls': metrics.get('validation_calls', 0),
             'total_turns': metrics.get('total_turns', 0),
@@ -708,12 +709,24 @@ def get_results():
     all_conditions = sorted({r.get('condition', '') for r in results})
     all_task_types = sorted({r.get('task_type', '') for r in results})
 
+    # Compute macro score (mean of per-category avg scores)
+    from collections import defaultdict
+    by_task = defaultdict(list)
+    for r in rows:
+        if r.get('task_type'):
+            by_task[r['task_type']].append(r.get('score', 0.0))
+    cat_avgs = [sum(scores) / len(scores) for scores in by_task.values() if scores]
+    macro_score = round(sum(cat_avgs) / len(cat_avgs), 4) if cat_avgs else 0
+    micro_score = round(sum(r.get('score', 0.0) for r in rows) / total, 4) if total else 0
+
     return jsonify({
         'run_status': results_data.get('run_status', 'complete'),
         'results': rows,
         'total': total,
         'n_correct': n_correct,
         'accuracy': round(n_correct / total, 4) if total else 0,
+        'micro_score': micro_score,
+        'macro_score': macro_score,
         'avg_judge_score': round(sum(f_scores) / len(f_scores), 2) if f_scores else None,
         'filters': {
             'models': all_models,

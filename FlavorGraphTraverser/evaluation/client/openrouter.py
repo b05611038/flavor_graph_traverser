@@ -25,7 +25,7 @@ class OpenRouterClient(BaseClient):
 
     Example:
         client = OpenRouterClient(
-            model="anthropic/claude-sonnet-4.5",
+            model="anthropic/claude-sonnet-4.6",
             api_key=os.getenv("OPENROUTER_API_KEY")
         )
         response = client.query(messages=[...], tools=[...])
@@ -48,7 +48,7 @@ class OpenRouterClient(BaseClient):
         Initialize OpenRouter client.
 
         Args:
-            model: OpenRouter model ID (e.g., "anthropic/claude-sonnet-4.5")
+            model: OpenRouter model ID (e.g., "anthropic/claude-sonnet-4.6")
             api_key: API key (if None, reads from environment)
             api_key_env: Environment variable name for API key
             base_url: OpenRouter API base URL

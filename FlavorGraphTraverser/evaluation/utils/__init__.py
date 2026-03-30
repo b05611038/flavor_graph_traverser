@@ -8,6 +8,7 @@ from .answer_parser import (
     parse_answer, AnswerParseResult,
     parse_judge_score, JudgeScoreResult,
     parse_multiselect_answer, MultiSelectParseResult,
+    compute_question_score,
 )
 from .config_loader import load_conditions_config
 from .response_normalizer import normalize_response
@@ -20,6 +21,7 @@ __all__ = [
     "JudgeScoreResult",
     "parse_multiselect_answer",
     "MultiSelectParseResult",
+    "compute_question_score",
     "load_conditions_config",
     "normalize_response",
     "build_icl_system_prompt",

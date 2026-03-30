@@ -65,7 +65,7 @@ class BaseClient(ABC):
         Initialize the client.
 
         Args:
-            model: Model identifier (e.g., "tinyllama", "anthropic/claude-sonnet-4.5")
+            model: Model identifier (e.g., "tinyllama", "anthropic/claude-sonnet-4.6")
             **kwargs: Additional client-specific configuration
         """
         self.model = model
