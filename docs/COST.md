@@ -1,6 +1,6 @@
-# Experiment Cost Estimate
+# Experiment Cost Summary
 
-Estimated token consumption and cost for the full benchmark run on OpenRouter.
+Token consumption and cost for the completed benchmark run on OpenRouter (April 13–16, 2026).
 
 ## Experiment Parameters
 
@@ -54,22 +54,11 @@ Using multiple judges from different providers enables:
 - **Robustness**: no single model's bias dominates F-category scores
 - **Research validity**: avoids self-judging conflict (no tested model is also a judge)
 
-Judge selection will be finalized after reviewing evaluation results.
-
-## Token Estimates
-
-Based on vLLM experiment with gpt-oss-20b (275 questions):
-
-| Condition | Input Tokens | Output Tokens | Total | Per Question |
-|-----------|-------------|--------------|-------|-------------|
-| **no_tool** (reasoning) | 51K | 273K | 324K | ~1,175 |
-| **no_tool** (non-reasoning) | 51K | 80K | 131K | ~475 |
-| **tool** (reasoning) | 1,317K | 718K | 2,035K | ~7,400 |
-| **tool** (non-reasoning) | 900K | 250K | 1,150K | ~4,200 |
+Final panel: 3 judges (Opus + Gemini + GPT-5.4 Pro). GPT-5.4 Pro is the most expensive and was run as a third opinion.
 
 ## Notes
 
-- Prices are OpenRouter rates as of March 2026. Actual costs may vary.
-- Token estimates are based on gpt-oss-20b vLLM run. Individual models will vary.
+- Prices are OpenRouter rates as of April 2026.
 - The two frontier models (Sonnet + GPT-5.4) account for ~65% of evaluation cost.
-- Caching is enabled — re-runs of completed questions are free.
+- Caching enabled — re-runs of already-completed questions were free.
+- Re-runs were performed for kimi-k2.5 (402 payment errors, 21 files), empty responses (34 files), and nemotron token limit issue (1 file). Additional cost: ~$5.

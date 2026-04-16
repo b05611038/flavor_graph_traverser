@@ -9,7 +9,7 @@ This module provides:
 - **Graph tool interface** — Expose CoffeeDescriptionGraph as LLM tools with budget control
 - **Evaluation framework** — Turn-based evaluation loop across no_tool/tool conditions with forced-answer fallback
 - **Batch runner** — Run experiments across multiple questions, models, and conditions with caching and incremental saves
-- **Answer parser** — Priority-based extraction from LLM responses
+- **Answer parser** — Three-layer extraction pipeline (canonical patterns → model-specific normalization → constrained fallback)
 - **Scoring** — Continuous 0–1 scores: binary for single-choice, F1 for multi-select, judge_score/5 for F-category
 - **LLM-as-a-judge** — F-category open-ended response evaluation with rubric-based 0–5 scoring
 - **Metrics collection** — Accuracy, scores, token usage, latency, tool call tracking (nav/val/turns)
@@ -29,8 +29,8 @@ executor = GraphToolExecutor(graph)
 executor.validate_descriptors(['rose', 'chocolate', 'unknown'])
 # {'valid': ['rose', 'chocolate'], 'invalid': ['unknown']}
 
-executor.get_parent('rose')
-# {'descriptor': 'rose', 'parents': ['floral'], 'error': None}
+executor.get_parent('blueberry')
+# {'descriptor': 'blueberry', 'parents': ['berry'], 'error': None}
 ```
 
 ### Run a Single Evaluation
@@ -49,13 +49,13 @@ print(result.score, result.is_correct, result.metrics.reasoning_calls)
 
 ```bash
 # Production run via OpenRouter
-python scripts/run_experiment.py \
+python scripts/experiment/run_experiment.py \
   --client openrouter \
   --models anthropic/claude-sonnet-4.6 \
   --conditions no_tool tool
 
 # Local smoke test via vLLM (for validation before production runs)
-python scripts/run_experiment.py \
+python scripts/experiment/run_experiment.py \
   --client vllm --base-url http://localhost:8000/v1 \
   --models openai/gpt-oss-20b \
   --conditions no_tool tool \
@@ -65,9 +65,9 @@ python scripts/run_experiment.py \
 ### View Results
 
 ```bash
-python scripts/question_auditor_unified.py \
+python scripts/audit/question_auditor_unified.py \
   data/questions/all_questions_system.json \
-  --results results/experiment/results.json
+  --results results/merge_all/results.json
 # Open http://localhost:5000/results
 ```
 

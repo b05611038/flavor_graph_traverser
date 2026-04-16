@@ -17,11 +17,11 @@ For domain-specific hierarchical reasoning, how does tool-augmented inference co
 
 ### Thesis
 
-Tool-augmented LLMs achieve near-full-context accuracy with significantly lower token cost, making them practical for deployable sensory recommendation systems.
+Structured KB access (the SCAA Coffee Flavor Wheel) provides reliable benefit for taxonomy-grounded queries but offers no benefit — or introduces anchoring harm — for semantic similarity and complex path reasoning tasks where real-world descriptor ambiguity exceeds what the hierarchy encodes.
 
-### Key Comparison
+### Key Finding
 
-- **tool vs no_tool**: Does graph-tool access improve hierarchical reasoning?
+All 11 models scored **lower** with tool access than without (macro score Δ ranges from -0.02 to -0.14). Tool-augmented reasoning consistently anchors models on incomplete graph data, degrading performance across question types.
 
 See [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) for the full experimental design, and [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) for the design philosophy.
 
@@ -41,8 +41,8 @@ graph = CoffeeDescriptionGraph(
     root=data['root']
 )
 
-print(graph.children_of_description('floral'))
-# ['rose', 'jasmine', 'lavender', ...]
+print(graph.children_of_description('berry'))
+# ['strawberry', 'blueberry', 'blackberry', 'raspberry']
 
 paths = graph.pathways_between_descriptions('ROOT:SYSTEM', 'rose')
 ```
@@ -60,8 +60,8 @@ result = executor.validate_descriptors(['rose', 'chocolate', 'unknown'])
 # {'valid': ['rose', 'chocolate'], 'invalid': ['unknown']}
 
 # Get parent (COUNTED — toward 5-call budget)
-result = executor.get_parent('rose')
-# {'descriptor': 'rose', 'parents': ['floral'], 'error': None}
+result = executor.get_parent('blueberry')
+# {'descriptor': 'blueberry', 'parents': ['berry'], 'error': None}
 ```
 
 ### 3. Run a Benchmark Evaluation
@@ -160,11 +160,28 @@ data/                           # Data files (private, excluded from git)
 └── questions/                  # Generated benchmark questions
 
 scripts/                        # Executable scripts
-├── run_experiment.py           # Main experiment runner
-├── generate_all_questions.py   # Generate all question types
-├── question_auditor_unified.py # Web-based auditor + results viewer
-├── manage_queue.py             # Audit queue management
-├── backup_manager.py           # Question backup/restore
+├── experiment/
+│   ├── run_experiment.py       # Main experiment runner
+│   └── test_full_workflow.py   # End-to-end pipeline test
+├── generation/
+│   ├── generate_all_questions.py    # Generate all question types
+│   ├── generate_a4_multiselect.py   # A4 multi-select generator
+│   ├── generate_a5_multiselect.py   # A5 multi-select generator
+│   └── generate_test_questions.py   # Quick test question generator
+├── audit/
+│   ├── question_auditor_unified.py  # Web-based auditor + results viewer
+│   ├── inspect_questions.py         # Quality inspection
+│   ├── manage_queue.py              # Audit queue management
+│   ├── review_flagged.py            # CLI flagged question review
+│   └── manage_audit_state.py        # Audit state utilities
+├── data/
+│   ├── backup_manager.py            # Question backup/restore
+│   ├── add_questions_live.py        # Add questions to running auditor
+│   ├── queue_live.py                # Live queue management client
+│   ├── export_benchmark_questions.py# Export confirmed questions
+│   ├── pack_system_graph.py         # Build system graph
+│   ├── flavor_filter.py             # Hierarchical flavor filtering
+│   └── clean_orphaned_audit_entries.py
 └── run_tests.sh                # Test runner
 
 tests/                          # Test suite
@@ -181,11 +198,11 @@ Generate questions from the System Graph:
 
 ```bash
 # Generate all task types
-python scripts/generate_all_questions.py
+python scripts/generation/generate_all_questions.py
 
 # Generate specific task type(s)
-python scripts/generate_all_questions.py E3
-python scripts/generate_all_questions.py E2 E3 --count 200
+python scripts/generation/generate_all_questions.py E3
+python scripts/generation/generate_all_questions.py E2 E3 --count 200
 ```
 
 See [docs/QUESTION_GENERATION.md](docs/QUESTION_GENERATION.md) for the full generation pipeline, data leakage prevention, and validation details.
@@ -299,6 +316,8 @@ See [docs/TESTING.md](docs/TESTING.md) for complete test documentation.
 | [docs/AUDITING.md](docs/AUDITING.md) | Audit workflow, results viewer, queue management |
 | [docs/TESTING.md](docs/TESTING.md) | Test suite, fixtures, CI |
 | [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) | Design philosophy, F-question rationale |
+| [docs/COST.md](docs/COST.md) | Completed experiment cost breakdown |
+| [docs/RELEASING.md](docs/RELEASING.md) | Release checklist (code, data, HF dataset) |
 | [configs/README.md](configs/README.md) | YAML configuration reference |
 | [prompts/](prompts/) | All prompt templates (one `.txt` file per prompt) |
 
@@ -320,13 +339,13 @@ graph.plot(filename)                   # Save graph visualization
 
 ---
 
-## Expected Outputs
+## Outputs
 
 1. **Table 1**: Macro score (%) by Model × Condition (no_tool, tool), grouped by model type
 2. **Table 2**: Per-category score breakdown (A1–A5, E1–E3, F) — with F1 for multi-select and judge scores for F
-3. **Figure 1**: Score vs. tool calls — diminishing returns
-4. **Figure 2**: Token cost vs. score trade-off
-5. **Statistical analysis**: McNemar's test with Bonferroni correction
+3. **Figure 1**: Tool benefit (Δ score) by task type — showing where KB access helps vs. anchors
+4. **Figure 2**: Tool call count vs. accuracy — diminishing or negative returns
+5. **Statistical analysis**: Paired significance tests on no_tool vs. tool per-question scores
 6. **Dashboard**: Interactive results viewer with CSV export (`http://localhost:5000/results`)
 
 ---

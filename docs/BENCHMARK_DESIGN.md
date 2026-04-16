@@ -2,7 +2,11 @@
 
 ## Research Goal
 
-Benchmark tool-augmented LLM inference on coffee flavor hierarchy reasoning. The central question: for domain-specific hierarchical tasks, does giving LLMs a graph traversal tool achieve near-full-context accuracy at lower token cost?
+Characterize when and how access to a structured domain knowledge base (the SCAA Coffee Flavor Wheel) helps or interferes with LLM reasoning on real-world flavor questions.
+
+The central question is not whether tools improve accuracy in the abstract, but **where the formal standard is sufficient to resolve ambiguity, and where it is not**. Real-world flavor descriptors — the language people actually use — often do not appear verbatim in official taxonomies. A professional may say "plums honey," "winey cherry," or "sweet chili" rather than any registered wheel node. The benchmark is designed around this gap: questions are generated from a richer descriptor vocabulary (1,175-node system graph) than the tool provides (111-node wheel), so the LLM must reason under the same ambiguity a practitioner faces.
+
+The tool limit (5 `get_parent`/`get_children` calls) is intentional: it reflects realistic database query budgets, and more information does not always lead to better decisions — partial matches from an incomplete knowledge base can anchor the model away from correct reasoning. The design tests whether constrained, structured KB access is net-positive under real-world ambiguity conditions.
 
 ## Graph Setup
 
@@ -106,8 +110,8 @@ LLM-judged open-ended questions requiring branch-level flavor hierarchy reasonin
 - Multiple valid answers accepted if supported by branch reasoning
 - Scoring rubrics evaluate reasoning quality, not specific conclusions
 
-**Target count:** 16 (G1: 5, G2: 5, G3: 6 including 1 abandoned draft)
-**Judge model:** Claude Opus 4.5 (with system graph tool access)
+**Target count:** 15 (G1: 5, G2: 5, G3: 5)
+**Judge panel:** Claude Opus 4.6, Gemini 3.1 Pro, GPT-5.4 Pro (optional) — multi-judge scoring
 
 ## Tool Interface
 
@@ -157,17 +161,17 @@ Answer format instructions use imperative framing (`"You MUST end your response 
 
 ## Answer Extraction
 
-Answers extracted using priority patterns:
+Answers are extracted using a **three-layer pipeline** (see `answer_parser.py`):
 
-```python
-patterns = [
-    r"I select \(([A-D])\)",           # Primary
-    r"answer is \(([A-D])\)",          # Fallback 1
-    r"\(([A-D])\)",                    # Last standalone (X)
-    r"\b([A-D])\b(?!.*\b[A-D]\b)",    # Last standalone letter
-]
-# None found → parse_error → marked as incorrect
-```
+| Layer | Scope | Confidence |
+|-------|-------|-----------|
+| **Layer 1: Canonical** | `"I select (X)"`, `"answer is (X)"` on visible content | High |
+| **Layer 2: Normalization** | Model-specific text transforms (bold markdown, truncated parens), then re-run Layer 1; try `thinking_content` for reasoning models | High |
+| **Layer 3: Fallback** | Last 3 sentences only, gated by signal words ("select", "answer", "therefore") | Low (tagged `[low-confidence]`) |
+
+Multi-select questions (A1, A4, A5) have no fallback layer — parse failure yields `parse_error` rather than a risky guess.
+
+The parser accepts optional `thinking_content` (for reasoning models like kimi-k2.5 whose visible output may be truncated) and `model_id` (for model-specific normalization rules).
 
 ## Scoring
 
@@ -209,11 +213,11 @@ Using multiple judges from different providers enables **inter-judge agreement**
 
 ```bash
 # Step 1: Run evaluation (no judging)
-python scripts/run_experiment.py --conditions no_tool tool --models ... --no-judge
+python scripts/experiment/run_experiment.py --conditions no_tool tool --models ... --no-judge
 
 # Step 2: Score with each judge
-python scripts/run_experiment.py --conditions no_tool tool --models ... --judge-model anthropic/claude-opus-4.6
-python scripts/run_experiment.py --conditions no_tool tool --models ... --judge-model google/gemini-3.1-pro-preview
+python scripts/experiment/run_experiment.py --conditions no_tool tool --models ... --judge-model anthropic/claude-opus-4.6
+python scripts/experiment/run_experiment.py --conditions no_tool tool --models ... --judge-model google/gemini-3.1-pro-preview
 ```
 
 Judge prompts are in `prompts/judge_system.txt` and `prompts/judge_closing.txt`. A mean score ≥ 3 counts as `is_correct=True` for binary accuracy reporting.
@@ -339,25 +343,37 @@ Jasmine's parent is floral. Therefore, I select (B).
 ─────────────────────────────────────────────────────────────────
 ```
 
-## Expected Results
+## Results Summary
 
-**Table 1:** Accuracy (%) by Model × Condition (no_tool, tool), grouped by model type (reasoning vs non-reasoning)
-**Table 2:** Per-task accuracy breakdown
-**Figure 1:** Accuracy vs. tool call count
-**Figure 2:** Token cost vs. accuracy trade-off
+The experiment was completed on April 13–16, 2026: 6,050 evaluations (11 models × 2 conditions × 275 questions), with a 3-judge panel (Opus 4.6, Gemini 3.1 Pro, GPT-5.4 Pro) for F-category scoring.
 
-**Success criteria:** The `tool` condition achieves ≥90% of full-context baseline accuracy with significantly fewer tokens, especially for non-reasoning models.
+**Key finding:** All 11 models showed **negative tool Δ** — tool access degraded performance across the board (macro score Δ from -0.02 to -0.14). This was consistent across model types and question categories.
 
-## Budget Estimate
+| Model | no_tool | tool | Δ |
+|-------|---------|------|---|
+| gemini-3-flash | 0.648 | 0.596 | -0.052 |
+| kimi-k2.5 | 0.624 | 0.570 | -0.053 |
+| claude-sonnet-4.6 | 0.636 | 0.549 | -0.087 |
+| gpt-5.4 | 0.630 | 0.526 | -0.105 |
+| mistral-medium-3.1 | 0.598 | 0.456 | -0.142 |
+
+**What this means:**
+
+- **Partial KB coverage creates anchoring harm**, not just neutral absence. When the 111-node tool graph returns "invalid" for real-world descriptors (which are in the 1,175-node system graph), models treat this as negative evidence and abandon correct knowledge-based reasoning.
+- **The tool-skip problem is unsolvable by prompting alone.** Despite the system prompt saying "a descriptor absent from the graph may still relate to SCAA categories you already know," models consistently anchor on tool output over their own knowledge.
+- **The boundary is sharper than hypothesized.** The original design expected positive tool benefit on taxonomy tasks (A1–A3) and negative on similarity tasks (E). In practice, even taxonomy tasks showed negative Δ for most models, because question descriptors are intentionally drawn from outside the tool graph's 111-node vocabulary.
+
+## Completed Budget
 
 ```
 Total evaluations: 275 questions × 2 conditions × 11 models = 6,050
-Judge calls: 15 F-questions × 2 conditions × 11 models = 330 per judge
+Judge calls: 15 F-questions × 2 conditions × 11 models × 3 judges = 990
 
 Evaluation cost:  ~$50  (24M tokens)
-Judge cost:       ~$9   (2 judges) or ~$54 (3 judges)
+Judge cost:       ~$9   (2 judges: Opus + Gemini) + ~$45 (GPT-5.4 Pro optional)
+Re-runs:          ~$5   (kimi payment errors, empty responses, nemotron token limit)
 
-Total: ~$59 (2 judges) or ~$104 (3 judges)
+Total spent: ~$60 (2-judge panel) or ~$105 (3-judge panel)
 ```
 
 See `docs/COST.md` for detailed per-model breakdown.

@@ -21,7 +21,7 @@ data/
 │
 └── questions/            # Generated benchmark questions
     ├── example_questions.json      # Example question format
-    └── questions_complete.json     # [Private] Full question set
+    └── all_questions_system.json   # [Private] Full question set (275 questions)
 ```
 
 ## File Formats
@@ -100,7 +100,7 @@ problematic_node_2
 
 ## Usage
 
-See `docs/FILTERING_WORKFLOW.md` for complete workflow documentation.
+See `docs/QUESTION_GENERATION.md` for complete workflow documentation.
 
 ### Load Graph Data
 
@@ -125,7 +125,7 @@ python scripts/review_filtered_nodes.py
 ### Generate Questions
 
 ```bash
-python scripts/generate_questions.py
+python scripts/generation/generate_all_questions.py
 ```
 
 ## Privacy Note

@@ -333,7 +333,7 @@ open htmlcov/index.html
 
 ## Continuous Integration
 
-### GitHub Actions (Coming Soon)
+### GitHub Actions
 
 Example `.github/workflows/test.yml`:
 
@@ -491,18 +491,6 @@ pytest -m "not slow"
 # Run tests requiring ollama
 pytest -m requires_ollama
 ```
-
----
-
-## Next Steps
-
-- [ ] Add tests for evaluator module (coming soon)
-- [ ] Add tests for answer parser
-- [ ] Add tests for LLM judge
-- [ ] Add tests for metrics calculation
-- [ ] Set up GitHub Actions CI
-- [ ] Add performance benchmarks
-- [ ] Increase coverage to 90%+
 
 ---
 

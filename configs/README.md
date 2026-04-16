@@ -172,7 +172,7 @@ experiment:
 ```yaml
 data:
   graph_file: "data/graphs/coffee_flavor_wheel.pkl"
-  questions_file: "data/questions/questions_complete.json"
+  questions_file: "data/questions/all_questions_system.json"
 ```
 
 **Relative to project root**. Adjust if you move data files.
@@ -391,7 +391,7 @@ runs:
 python scripts/run_benchmark.py --run full
 ```
 
-**Expected cost**: ~$35-55 (see Implementation Guide)
+**Actual cost**: ~$60 for 2-judge panel (see docs/COST.md)
 
 ---
 
@@ -469,16 +469,16 @@ export OPENROUTER_API_KEY="your_key"
 
 ### Question File Not Found
 
-**Error**: `Questions file not found: data/questions/questions_complete.json`
+**Error**: `Questions file not found: data/questions/all_questions_system.json`
 
 **Fix**:
-1. Generate questions: `python scripts/generate_questions.py`
+1. Generate questions: `python scripts/generation/generate_all_questions.py`
 2. Or update path in `experiment.yaml`
 
 ---
 
 ## See Also
 
-- `docs/FlavorGraphTraverser_Implementation_Guide.md` - Complete design specification
-- `docs/FILTERING_WORKFLOW.md` - Question generation workflow
+- `docs/BENCHMARK_DESIGN.md` - Complete benchmark design and scoring
+- `docs/QUESTION_GENERATION.md` - Question generation pipeline
 - `FlavorGraphTraverser/evaluation/README.md` - Evaluation module documentation

@@ -190,8 +190,30 @@ The same design principle applies beyond coffee. Any domain with a codified, hie
 
 The central research claim is:
 
-> For domain-specific hierarchical flavor reasoning, tool-augmented LLMs that follow the professional standard outperform unaugmented LLMs that rely on training intuition — and the gap is largest on decision-making tasks that require graph traversal, not simple lookup.
+> Structured domain knowledge bases (such as the SCAA Coffee Flavor Wheel) can provide benefit for LLMs on taxonomy-grounded queries — but only when the KB vocabulary covers the query terms. When questions use real-world descriptors that fall outside the KB's vocabulary (as they do in practice), partial KB coverage creates **anchoring harm**: models treat "not found in graph" as negative evidence, abandoning correct knowledge-based reasoning in favor of incomplete tool output. This effect was observed across all 11 models tested, producing universally negative tool Δ on both taxonomy and similarity task types.
+
+This is a practically useful finding for anyone deploying KB-augmented LLMs in food production, quality control, or sensory evaluation: the gap between a formal standard's vocabulary and real-world language is not merely a coverage limitation — it is an active source of reasoning degradation. Tool-augmented systems must be designed to handle vocabulary mismatch explicitly, not merely to provide lookup access.
 
 ---
 
-*Written: 2026-03-13. Updated: 2026-03-23. G2 and G3 questions finalized with detailed scenario designs.*
+## Empirical Findings (April 2026)
+
+The completed experiment (6,050 evaluations across 11 models) produced a clear and consistent result: **every model performed worse with tool access than without**. Macro score Δ ranged from -0.020 (nemotron) to -0.142 (mistral).
+
+This contradicts the initial hypothesis that tools would help on taxonomy tasks (A1–A3) while providing no benefit on similarity tasks (E). In practice, even taxonomy tasks showed negative Δ for most models. The root cause is the asymmetric graph design: questions are generated from 1,175 nodes, but the tool graph contains only 111. When models validate descriptors and find them absent, they anchor on this absence rather than reasoning from their own knowledge.
+
+The anchoring effect is strongest for models that make more tool calls (mistral, gpt-oss) and weakest for models that tend to answer directly despite having tool access (nemotron, kimi). This suggests that the harm is proportional to tool engagement, not model capability.
+
+---
+
+## Prompt Optimization Notes (Tool Condition)
+
+The tool condition system prompt was empirically optimized through a 5-version ablation (v3–v7) on GPT-OSS-20B before the full multi-model run. The key finding:
+
+**The validated v3 prompt** warns against partial-match inference ("finding 'blueberry' does not tell you where 'blueberry jam' sits") without prescribing a per-question-type strategy. More prescriptive prompts (v5–v7) increased tool call volume for question types where graph data is misleading, producing net regressions.
+
+The fundamental constraint: the model cannot be reliably instructed (via system prompt alone) to skip tools for specific question types. Partial graph information — even a single validate call returning all-invalid — can anchor the model away from a better knowledge-based answer. This anchoring effect is an observed failure mode worth reporting, not an artifact of poor prompting.
+
+---
+
+*Written: 2026-03-13. Updated: 2026-04-16. Broader Implications updated with empirical findings from completed experiment (6,050 evaluations, 11 models). Prompt Optimization Notes from v3–v7 ablation study.*

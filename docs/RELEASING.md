@@ -1,5 +1,13 @@
 # Release Guide
 
+## Current Status (April 2026)
+
+- **Experiment**: Complete (6,050 evaluations, 11 models × 2 conditions × 275 questions)
+- **Results**: Verified and audited (ground truth fixes applied, parser validated)
+- **Judge**: 3-judge panel (Opus 4.6, Gemini 3.1 Pro, GPT-5.4 Pro) — all F-category scores collected
+- **Code**: Ready for release pending paper acceptance
+- **Data**: Private, to be released on paper acceptance (see below)
+
 ## What Gets Released
 
 | Artifact | Where | When |

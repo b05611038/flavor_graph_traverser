@@ -13,15 +13,15 @@ DescriptorSampler  →  QuestionGenerator  →  QuestionValidator
 
 ```bash
 # Generate all task types
-python scripts/generate_all_questions.py
+python scripts/generation/generate_all_questions.py
 
 # Generate specific task type(s)
-python scripts/generate_all_questions.py E3
-python scripts/generate_all_questions.py E2 E3
+python scripts/generation/generate_all_questions.py E3
+python scripts/generation/generate_all_questions.py E2 E3
 
 # Override count or seed
-python scripts/generate_all_questions.py E3 --count 200
-python scripts/generate_all_questions.py E2 --seed 999
+python scripts/generation/generate_all_questions.py E3 --count 200
+python scripts/generation/generate_all_questions.py E2 --seed 999
 ```
 
 This automatically:
@@ -56,7 +56,7 @@ sampler = DescriptorSampler(graph, global_exclude=all_tool_nodes)
 - `parent`, `ancestor`, `lca`, `root`, `root_category`
 
 ### Layer 3: Generation Script
-`scripts/generate_all_questions.py` loads **all** tool graph nodes (not just leaves) and passes them to both sampler and validator:
+`scripts/generation/generate_all_questions.py` loads **all** tool graph nodes (not just leaves) and passes them to both sampler and validator:
 ```python
 tool_nodes = {n for n in tool_data['descriptions'] if not n.startswith('ROOT:')}
 generator = QuestionGenerator(

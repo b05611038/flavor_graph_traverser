@@ -9,7 +9,7 @@ bash scripts/start_auditor.sh
 
 Or manually:
 ```bash
-python scripts/question_auditor_unified.py
+python scripts/audit/question_auditor_unified.py
 ```
 
 ## Interface
@@ -24,7 +24,7 @@ The unified auditor at port 5000 has three modes:
 
 Launch with experiment results:
 ```bash
-python scripts/question_auditor_unified.py data/questions/all_questions_system.json --results results/experiment/results.json
+python scripts/audit/question_auditor_unified.py data/questions/all_questions_system.json --results results/merge_all/results.json
 ```
 
 The results mode has two sub-tabs:
@@ -55,10 +55,10 @@ When all pending questions have been skipped once, the auditor cycles back to th
 Control which questions appear first using the CLI:
 
 ```bash
-python scripts/manage_queue.py status              # Show counts by task type
-python scripts/manage_queue.py preview             # Show next 20 in queue
-python scripts/manage_queue.py prioritize A2       # Move A2 pending/flagged to front
-python scripts/manage_queue.py deprioritize A1     # Move A1 to back
+python scripts/audit/manage_queue.py status              # Show counts by task type
+python scripts/audit/manage_queue.py preview             # Show next 20 in queue
+python scripts/audit/manage_queue.py prioritize A2       # Move A2 pending/flagged to front
+python scripts/audit/manage_queue.py deprioritize A1     # Move A1 to back
 ```
 
 Or the API:
@@ -78,10 +78,10 @@ qm.save()
 
 ```bash
 # Add new questions from a file
-python scripts/add_questions_live.py /tmp/new_questions.json
+python scripts/data/add_questions_live.py /tmp/new_questions.json
 
 # Reload questions file after external changes
-python scripts/add_questions_live.py --reload
+python scripts/data/add_questions_live.py --reload
 ```
 
 This calls `POST /api/add_questions` or `POST /api/reload` on the running auditor.
@@ -118,11 +118,11 @@ The state manager uses file locking and atomic writes to prevent corruption.
 - `data/questions/all_questions_system.json` — the single source of truth for all questions
 - `data/audit_results/audit_state.json` — audit status for each question
 
-**Backups** are created by `scripts/backup_manager.py` if needed:
+**Backups** are created by `scripts/data/backup_manager.py` if needed:
 ```bash
-python scripts/backup_manager.py backup      # create backup
-python scripts/backup_manager.py list        # list available backups
-python scripts/backup_manager.py restore N   # restore to version N
+python scripts/data/backup_manager.py backup      # create backup
+python scripts/data/backup_manager.py list        # list available backups
+python scripts/data/backup_manager.py restore N   # restore to version N
 ```
 
 ## Troubleshooting
@@ -136,11 +136,11 @@ bash scripts/start_auditor.sh
 **Changes not showing in browser:** Hard-refresh (Cmd+Shift+R). If the queue order is wrong after `manage_queue.py prioritize`, a full auditor restart is more reliable than `/api/reload`:
 ```bash
 pkill -f question_auditor_unified
-python scripts/question_auditor_unified.py
+python scripts/audit/question_auditor_unified.py
 ```
 
 **Restore from backup:**
 ```bash
-python scripts/backup_manager.py list     # find the right version
-python scripts/backup_manager.py restore N
+python scripts/data/backup_manager.py list     # find the right version
+python scripts/data/backup_manager.py restore N
 ```
