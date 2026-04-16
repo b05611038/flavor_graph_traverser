@@ -19,7 +19,7 @@ import json
 import random
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
 from FlavorGraphTraverser.generation import QuestionValidator

@@ -13,4 +13,4 @@ sleep 1
 
 # Start unified auditor
 echo "Starting unified auditor on port 5000..."
-python scripts/question_auditor_unified.py data/questions/all_questions_system.json
+python scripts/audit/question_auditor_unified.py data/questions/all_questions_system.json

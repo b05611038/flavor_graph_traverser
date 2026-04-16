@@ -162,7 +162,7 @@ def create_backup_if_needed(force=False, incremental=True):
         if has_backup_today and not (incremental and count_changed):
             if count_changed:
                 print(f"Confirmed count changed ({latest_version} → {confirmed_total}) but backup exists for today")
-                print(f"To force incremental backup, run: python scripts/backup_manager.py backup")
+                print(f"To force incremental backup, run: python scripts/data/backup_manager.py backup")
             else:
                 print(f"Backup already exists for today with same confirmed count ({confirmed_total})")
             return None

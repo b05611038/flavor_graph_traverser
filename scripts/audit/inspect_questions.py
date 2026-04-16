@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from collections import defaultdict, Counter
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 def load_tool_graph_nodes(tool_graph_path: str) -> set:

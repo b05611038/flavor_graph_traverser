@@ -20,7 +20,7 @@ from pathlib import Path
 from collections import Counter
 from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
 from FlavorGraphTraverser.generation import QuestionGenerator

@@ -8,7 +8,7 @@ Generates 10 test questions (5 A1 + 5 A2) for testing the workflow.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
 from FlavorGraphTraverser.generation import QuestionGenerator
