@@ -44,7 +44,7 @@ class LLMJudge:
         >>> result.score  # 0-5
     """
 
-    def __init__(self, client: BaseClient, temperature: float = 0.0, max_tokens: int = 1024):
+    def __init__(self, client: BaseClient, temperature: float = 0.0, max_tokens: int = 8192):
         """
         Initialize judge.
 
@@ -128,7 +128,7 @@ class LLMJudge:
 
         if scoring_rubric:
             rubric_lines = ["## Scoring Rubric (0–5)"]
-            for score_key in sorted(scoring_rubric.keys(), key=lambda x: int(x), reverse=True):
+            for score_key in sorted(scoring_rubric.keys(), key=lambda x: (int(x) if x.isdigit() else -1), reverse=True):
                 rubric_lines.append(f"[{score_key}] {scoring_rubric[score_key]}")
             parts.append("\n".join(rubric_lines))
 
