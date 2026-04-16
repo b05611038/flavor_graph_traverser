@@ -50,6 +50,7 @@ class LLMResponse:
     finish_reason: Optional[str] = None
     raw_response: Optional[Dict[str, Any]] = None
     thinking_content: Optional[str] = None
+    resolved_model: Optional[str] = None  # Actual versioned model ID returned by the API
 
 
 class BaseClient(ABC):
