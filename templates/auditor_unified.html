@@ -1145,6 +1145,68 @@
 
             loadResults();
             loadDashboard();
+            startAutoReload();
+        }
+
+        // ── Auto-reload ──────────────────────────────────────────────────────────
+        let _autoReloadTimer = null;
+        let _lastUpdatedAt = null;
+        let _lastRecordCount = null;
+        let _lastUpdatedEl = null;
+
+        function startAutoReload() {
+            if (_autoReloadTimer) clearInterval(_autoReloadTimer);
+            _lastUpdatedAt = Date.now();
+            _lastRecordCount = null;
+
+            // Inject "Last updated" label next to the sub-tab buttons if not already there
+            if (!document.getElementById('auto-reload-label')) {
+                const tabBar = document.querySelector('#results-mode > div:first-child');
+                const label = document.createElement('span');
+                label.id = 'auto-reload-label';
+                label.style.cssText = 'font-size:11px;color:#9ca3af;margin-left:auto;align-self:center';
+                label.textContent = 'Auto-refreshing…';
+                tabBar.appendChild(label);
+                _lastUpdatedEl = label;
+            } else {
+                _lastUpdatedEl = document.getElementById('auto-reload-label');
+            }
+
+            // Tick every second just to update the "Xs ago" counter
+            _autoReloadTimer = setInterval(async () => {
+                if (_lastUpdatedEl && _lastUpdatedAt) {
+                    const sec = Math.round((Date.now() - _lastUpdatedAt) / 1000);
+                    _lastUpdatedEl.textContent = `Updated ${sec}s ago`;
+                }
+            }, 1000);
+
+            // Poll for new data every 10s
+            async function poll() {
+                try {
+                    const resp = await fetch('/api/progress');
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    const total = Object.values(data.by_model_condition || {}).reduce((a, b) => a + b, 0);
+                    if (_lastRecordCount === null) {
+                        _lastRecordCount = total;
+                    } else if (total !== _lastRecordCount) {
+                        _lastRecordCount = total;
+                        _lastUpdatedAt = Date.now();
+                        await loadDashboard();
+                        await loadResults();
+                    }
+                    // Slow down polling once run is complete
+                    const delay = (data.run_status === 'complete') ? 60000 : 10000;
+                    setTimeout(poll, delay);
+                } catch (e) {
+                    setTimeout(poll, 30000);  // back-off on error
+                }
+            }
+            setTimeout(poll, 10000);
+        }
+
+        function stopAutoReload() {
+            if (_autoReloadTimer) { clearInterval(_autoReloadTimer); _autoReloadTimer = null; }
         }
 
         function showResultsTab(tab) {
@@ -1168,31 +1230,51 @@
         let _dashboardCsvData = '';
 
         async function loadDashboard() {
-            const resp = await fetch('/api/results?' + new URLSearchParams({}));
+            const [resp, progResp] = await Promise.all([
+                fetch('/api/results?' + new URLSearchParams({})),
+                fetch('/api/progress'),
+            ]);
             const data = await resp.json();
+            const progData = progResp.ok ? await progResp.json() : {};
+
             if (data.error || !data.results.length) {
                 document.getElementById('dashboard-content').innerHTML = '<p>No results to display.</p>';
                 return;
             }
 
             const results = data.results;
+            const totalQ = progData.total_questions || 0;
+            const progressCounts = progData.by_model_condition || {};  // "model|cond" → n
 
             // Collect unique models, conditions, task types
             const models = [...new Set(results.map(r => r.model))].sort();
             const conditions = [...new Set(results.map(r => r.condition))].sort();
             const taskTypes = [...new Set(results.map(r => r.task_type))].sort();
 
-            // Build per model×condition×task_type score map
-            const scoreMap = {};  // key: `${model}|${condition}|${taskType}` → [scores]
+            // Build per model×condition×task_type score map.
+            // Skip no_judge rows so cells where the judge wasn't run show "—",
+            // not "0" — score=0 there means "unscored", not "model failed".
+            const scoreMap = {};      // key → [scores]
+            const totalMap = {};      // key → total question count (including no_judge)
             for (const r of results) {
                 const key = `${r.model}|${r.condition}|${r.task_type}`;
+                if (!totalMap[key]) totalMap[key] = 0;
+                totalMap[key]++;
+                if (r.status === 'no_judge') continue;
                 if (!scoreMap[key]) scoreMap[key] = [];
                 scoreMap[key].push(r.score);
             }
 
             const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
             const cellColor = v => v === null ? '#f3f4f6' : v >= 0.8 ? '#dcfce7' : v >= 0.5 ? '#fef9c3' : v > 0 ? '#fef2f2' : '#f9fafb';
-            const cellText = v => v === null ? '–' : (v * 100).toFixed(0);
+            const cellText = (v, key, decimals = 0) => {
+                if (v === null) return '–';
+                const scored = (scoreMap[key] || []).length;
+                const total = totalMap[key] || 0;
+                const partial = key !== null && scored < total;
+                const num = (v * 100).toFixed(decimals);
+                return partial ? `<span title="${scored}/${total} judged" style="opacity:0.6;font-style:italic">${num}*</span>` : num;
+            };
 
             // Build table: one section per condition
             const isComplete = data.run_status === 'complete';
@@ -1208,7 +1290,7 @@
 
             let csvLines = [];
             // CSV header
-            let csvHeader = ['Model', 'Condition', ...taskTypes, 'Macro', 'Micro', 'Accuracy'];
+            let csvHeader = ['Model', 'Condition', 'Progress', ...taskTypes, 'Macro', 'Micro', 'Total'];
             csvLines.push(csvHeader.join(','));
 
             for (const cond of conditions) {
@@ -1216,12 +1298,13 @@
                 html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums">';
                 html += '<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">';
                 html += '<th style="text-align:left;padding:8px 10px;font-weight:600">Model</th>';
+                html += '<th style="text-align:center;padding:8px 8px;font-weight:600;min-width:90px">Progress</th>';
                 for (const tt of taskTypes) {
                     html += `<th style="text-align:center;padding:8px 6px;font-weight:600;min-width:44px">${tt}</th>`;
                 }
                 html += '<th style="text-align:center;padding:8px 6px;font-weight:700;border-left:2px solid #d1d5db">Macro</th>';
                 html += '<th style="text-align:center;padding:8px 6px;font-weight:600">Micro</th>';
-                html += '<th style="text-align:center;padding:8px 6px;font-weight:600">Acc</th>';
+                html += '<th style="text-align:center;padding:8px 6px;font-weight:700;border-left:1px solid #d1d5db" title="Overall continuous score: mean across all questions including F-category">Total</th>';
                 html += '</tr></thead><tbody>';
 
                 for (const model of models) {
@@ -1229,9 +1312,21 @@
                     html += `<tr style="border-bottom:1px solid #e5e7eb">`;
                     html += `<td style="padding:8px 10px;font-weight:500;white-space:nowrap">${shortModel}</td>`;
 
+                    // Progress cell
+                    const progKey = `${model}|${cond}`;
+                    const nDone = progressCounts[progKey] || 0;
+                    const pct = totalQ > 0 ? Math.round(nDone / totalQ * 100) : 0;
+                    const barColor = pct === 100 ? '#4ade80' : '#60a5fa';
+                    const progLabel = totalQ > 0 ? `${nDone} / ${totalQ}` : `${nDone}`;
+                    html += `<td style="padding:6px 8px;text-align:center">` +
+                        `<div style="font-size:11px;color:#374151;margin-bottom:2px">${progLabel}</div>` +
+                        `<div style="height:5px;background:#e5e7eb;border-radius:3px;overflow:hidden">` +
+                        `<div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.4s"></div>` +
+                        `</div></td>`;
+
                     const catScores = [];
                     const allScores = [];
-                    let nCorrect = 0, nTotal = 0;
+                    let nCorrect = 0, nTotal = 0, allScoredScores = [];
 
                     for (const tt of taskTypes) {
                         const key = `${model}|${cond}|${tt}`;
@@ -1239,24 +1334,28 @@
                         const v = avg(scores);
                         if (v !== null) catScores.push(v);
                         allScores.push(...scores);
-                        // count accuracy
-                        const matchResults = results.filter(r => r.model === model && r.condition === cond && r.task_type === tt);
+                        // count accuracy (exclude no_judge — judge didn't run)
+                        const matchResults = results.filter(r =>
+                            r.model === model && r.condition === cond &&
+                            r.task_type === tt && r.status !== 'no_judge');
                         nCorrect += matchResults.filter(r => r.is_correct).length;
                         nTotal += matchResults.length;
-                        html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(v)}">${cellText(v)}</td>`;
+                        allScoredScores.push(...matchResults.map(r => r.score));
+                        html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(v)}">${cellText(v, key)}</td>`;
                     }
 
                     const macro = catScores.length ? catScores.reduce((a,b) => a+b,0) / catScores.length : null;
                     const micro = allScores.length ? allScores.reduce((a,b) => a+b,0) / allScores.length : null;
-                    const accuracy = nTotal ? nCorrect / nTotal : null;
+                    // Total: continuous mean across all scored questions (includes F judge scores)
+                    const total = allScoredScores.length ? allScoredScores.reduce((a,b) => a+b,0) / allScoredScores.length : null;
 
-                    html += `<td style="text-align:center;padding:8px 6px;font-weight:700;border-left:2px solid #d1d5db;background:${cellColor(macro)}">${cellText(macro)}</td>`;
-                    html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(micro)}">${cellText(micro)}</td>`;
-                    html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(accuracy)}">${cellText(accuracy)}</td>`;
+                    html += `<td style="text-align:center;padding:8px 6px;font-weight:700;border-left:2px solid #d1d5db;background:${cellColor(macro)}">${cellText(macro, null, 2)}</td>`;
+                    html += `<td style="text-align:center;padding:8px 6px;background:${cellColor(micro)}">${cellText(micro, null, 2)}</td>`;
+                    html += `<td style="text-align:center;padding:8px 6px;font-weight:700;border-left:1px solid #d1d5db;background:${cellColor(total)}">${cellText(total, null, 2)}</td>`;
                     html += '</tr>';
 
                     // CSV row
-                    let csvRow = [shortModel, cond];
+                    let csvRow = [shortModel, cond, progLabel];
                     for (const tt of taskTypes) {
                         const key = `${model}|${cond}|${tt}`;
                         const v = avg(scoreMap[key] || []);
@@ -1264,7 +1363,7 @@
                     }
                     csvRow.push(macro !== null ? (macro * 100).toFixed(1) : '');
                     csvRow.push(micro !== null ? (micro * 100).toFixed(1) : '');
-                    csvRow.push(accuracy !== null ? (accuracy * 100).toFixed(1) : '');
+                    csvRow.push(total !== null ? (total * 100).toFixed(1) : '');
                     csvLines.push(csvRow.join(','));
                 }
 
@@ -1275,8 +1374,9 @@
             html += `<div style="margin-top:14px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;color:#6b7280;line-height:1.7">
                 <strong>Scoring</strong>: Single-choice = 0 or 100 · Multi-select = F1 (0–100) · F-category = judge_score/5 (0–100)<br>
                 <strong>Macro</strong> = mean of per-category averages (each category weighted equally) ·
-                <strong>Micro</strong> = mean of all question scores ·
-                <strong>Acc</strong> = binary accuracy (exact match only)<br>
+                <strong>Micro</strong> = mean of all question scores (excludes no_judge) ·
+                <strong>Total</strong> = continuous mean across all scored questions incl. F-category<br>
+                <strong>Progress</strong> = questions evaluated out of total loaded (blue bar → green when complete)<br>
                 Cell colors: <span style="background:#dcfce7;padding:1px 6px;border-radius:3px">≥80</span>
                 <span style="background:#fef9c3;padding:1px 6px;border-radius:3px">≥50</span>
                 <span style="background:#fef2f2;padding:1px 6px;border-radius:3px">&lt;50</span>
@@ -1351,16 +1451,20 @@
                 }
             }
 
-            // Stats bar
-            const acc = data.total > 0 ? (data.accuracy * 100).toFixed(1) + '%' : 'N/A';
-            const macroStr = data.total > 0 ? (data.macro_score * 100).toFixed(1) + '%' : 'N/A';
-            const microStr = data.total > 0 ? (data.micro_score * 100).toFixed(1) + '%' : 'N/A';
+            // Stats bar — accuracy and scores both computed over scorable rows
+            // (excludes no_judge, where the judge wasn't run)
+            const nScored = data.n_scorable !== undefined ? data.n_scorable : data.total;
+            const acc = nScored > 0 ? (data.accuracy * 100).toFixed(1) + '%' : 'N/A';
+            const macroStr = nScored > 0 ? (data.macro_score * 100).toFixed(1) + '%' : 'N/A';
+            const microStr = nScored > 0 ? (data.micro_score * 100).toFixed(1) + '%' : 'N/A';
             const judgeStr = data.avg_judge_score !== null
                 ? `Judge avg: ${data.avg_judge_score}/5` : '';
+            const unscoredStr = data.n_unscored
+                ? ` <span style="color:#9ca3af">(${data.n_unscored} unscored)</span>` : '';
             const detailStatus = (data.run_status === 'complete')
                 ? '' : '<span style="font-size:11px;padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:4px">Preliminary</span>';
             document.getElementById('results-stats-bar').innerHTML = `
-                <span>${data.total} results</span>
+                <span>${data.total} results${unscoredStr}</span>
                 <span class="highlight">Macro Score: ${macroStr}</span>
                 <span>Micro: ${microStr}</span>
                 <span>Accuracy: ${acc}</span>
@@ -1409,9 +1513,21 @@
                 const verdict = r.is_correct ? '✓' : (r.status === 'success' ? '✗' : '⚠');
                 const vColor  = r.is_correct ? '#16a34a' : r.status === 'success' ? '#dc2626' : '#d97706';
                 const vClass  = r.is_correct ? 'correct' : (r.status === 'success' ? 'wrong' : 'error');
-                const statusBadge = r.judge_score !== null
-                    ? `<span class="badge badge-primary">${r.judge_score}/5</span>`
-                    : `<span class="badge ${vClass==='correct'?'badge-correct':vClass==='wrong'?'badge-wrong':'badge-warning'}">${r.status}</span>`;
+                // Build per-judge breakdown for F-category
+                const judgeScores = r.judge_scores || {};
+                const judgeKeys = Object.keys(judgeScores);
+                let statusBadge;
+                if (judgeKeys.length > 0) {
+                    const parts = judgeKeys.map(k => {
+                        const shortName = k.split('/').pop().replace('claude-','').replace('-preview','');
+                        const v = judgeScores[k];
+                        return v !== null ? `${shortName}:${v}` : `${shortName}:…`;
+                    });
+                    const mean = r.judge_score !== null ? r.judge_score.toFixed(1) : '…';
+                    statusBadge = `<span class="badge badge-primary" title="${parts.join(' | ')}">${mean}/5 <span style="font-size:10px;opacity:0.75">[${judgeKeys.length}j]</span></span>`;
+                } else {
+                    statusBadge = `<span class="badge ${vClass==='correct'?'badge-correct':vClass==='wrong'?'badge-wrong':'badge-warning'}">${r.status}</span>`;
+                }
                 const scoreVal = (r.score * 100).toFixed(0);
                 const scoreColor = r.score >= 0.8 ? '#16a34a' : r.score >= 0.5 ? '#d97706' : r.score > 0 ? '#dc2626' : '#d1d5db';
 
@@ -1444,7 +1560,18 @@
             const vClass  = r.is_correct ? 'correct' : (r.status === 'success' ? 'wrong' : 'error');
             const answerStr = Array.isArray(r.model_answer) ? r.model_answer.join(', ') : (r.model_answer || 'none');
             const correctStr = Array.isArray(r.correct_answer) ? r.correct_answer.join(', ') : (r.correct_answer || '?');
-            const judgeStr = r.judge_score !== null ? ` · Judge: ${r.judge_score}/5` : '';
+            const judgeScoresModal = r.judge_scores || {};
+            const judgeModalKeys = Object.keys(judgeScoresModal);
+            let judgeStr = '';
+            if (judgeModalKeys.length > 0) {
+                const parts = judgeModalKeys.map(k => {
+                    const shortName = k.split('/').pop().replace('claude-','').replace('-preview','');
+                    const v = judgeScoresModal[k];
+                    return v !== null ? `${shortName}: ${v}/5` : `${shortName}: pending`;
+                });
+                const mean = r.judge_score !== null ? r.judge_score.toFixed(2) : '…';
+                judgeStr = ` · Judge: ${mean}/5 (${parts.join(', ')})`;
+            }
 
             let body = `
                 <div class="conv-verdict ${vClass}">

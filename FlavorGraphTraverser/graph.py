@@ -504,8 +504,8 @@ class CoffeeDescriptionGraph:
             List of child description names
 
         Example:
-            >>> graph.children_of_description('floral')
-            ['rose', 'jasmine', 'chamomile']
+            >>> graph.children_of_description('berry')
+            ['strawberry', 'blueberry', 'blackberry', 'raspberry']
         """
         description = string_check(
             description, "description", valid_candidates=self.descriptions

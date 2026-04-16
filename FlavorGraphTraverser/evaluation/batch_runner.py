@@ -28,6 +28,8 @@ Example:
 """
 
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -39,6 +41,7 @@ from .. import load_graph_data
 from .client import create_client
 from .tools import GraphToolExecutor
 from .evaluator import QuestionEvaluator, EvaluationResult
+from .utils.answer_parser import AnswerParseResult, MultiSelectParseResult, compute_question_score
 
 
 @dataclass
@@ -199,10 +202,14 @@ class BatchRunner:
         judge_client = None
         if judge_model:
             try:
+                # Only fall back to model's base_url/api_key when judge uses the
+                # same client type; otherwise the defaults are wrong (e.g. vLLM
+                # URL passed to an OpenRouter judge).
+                same_client = (judge_client_type or client_type) == client_type
                 judge_client = create_client(
                     client_type=judge_client_type or client_type,
                     model=judge_model,
-                    base_url=judge_base_url or base_url,
+                    base_url=judge_base_url or (base_url if same_client else None),
                     api_key=judge_api_key or api_key,
                 )
                 if self.config.verbose:
@@ -296,6 +303,14 @@ class BatchRunner:
 
                         completed += 1
 
+                        # Periodic checkpoint every 10 questions so the auditor
+                        # dashboard updates incrementally rather than only at
+                        # the end of each full model×condition batch.
+                        if completed % 10 == 0:
+                            elapsed_so_far = time.time() - start_time
+                            partial_summary = self._generate_summary(results, elapsed_so_far)
+                            self._save_results(results, partial_summary, run_status="running")
+
                     except Exception as e:
                         if self.config.verbose:
                             print(f"✗ ERROR: {e}")
@@ -383,29 +398,56 @@ class BatchRunner:
                 status=cached_data["status"],
                 metrics=metrics,
                 conversation_history=cached_data.get("conversation_history", []),
-                parse_result=cached_data.get("parse_result"),
+                parse_result=self._deserialize_parse_result(cached_data.get("parse_result")),
                 errors=cached_data.get("errors", []),
                 timestamp=cached_data.get("timestamp", ""),
                 task_type=cached_data.get("task_type", ""),
                 model_response_text=cached_data.get("model_response_text"),
                 judge_score=cached_data.get("judge_score"),
                 judge_result=cached_data.get("judge_result"),
+                # Always recompute score from source fields — stale cached scores
+                # from older runs would otherwise pollute aggregates.
+                score=compute_question_score(
+                    model_answer=cached_data.get("model_answer"),
+                    correct_answer=cached_data.get("correct_answer"),
+                    is_correct=cached_data["is_correct"],
+                    judge_score=cached_data.get("judge_score"),
+                    status=cached_data["status"],
+                ),
             )
             return result
 
         return cached_data
 
+    @staticmethod
+    def _deserialize_parse_result(data):
+        """Reconstruct AnswerParseResult or MultiSelectParseResult from cached dict."""
+        if not data:
+            return None
+        if "answers" in data:
+            return MultiSelectParseResult(**data)
+        return AnswerParseResult(**data)
+
     def _cache_result(self, model: str, condition: str, question_id: str, result: EvaluationResult):
-        """Cache a result."""
+        """Cache a result using atomic write (write to temp file, then rename)."""
         cache_key = f"{model}/{condition}/{question_id}"
         self.results_cache[cache_key] = result
 
-        # Save to file
+        # Save to file atomically to avoid corruption on concurrent access or crash
         cache_file = Path(self.config.cache_dir) / model / condition / f"{question_id}.json"
         cache_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(cache_file, 'w') as f:
-            json.dump(asdict(result), f, indent=2)
+        fd, tmp_path = tempfile.mkstemp(dir=cache_file.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(asdict(result), f, indent=2)
+            os.replace(tmp_path, cache_file)  # atomic on POSIX
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def _load_cache(self):
         """Load cached results."""
@@ -420,12 +462,16 @@ class BatchRunner:
                 with open(cache_file, 'r') as f:
                     data = json.load(f)
 
-                # Extract cache key from path
+                # Extract cache key from path.
+                # Layout: <model_with_slashes>/<condition>/<question_id>.json
+                # e.g. openai/gpt-oss-20b/no_tool/F_xxx.json → 4 parts
+                # model may contain '/' so everything except the last two
+                # path components is the model name.
                 parts = cache_file.relative_to(cache_dir).parts
                 if len(parts) >= 3:
-                    model = parts[0]
-                    condition = parts[1]
-                    question_id = parts[2].replace(".json", "")
+                    question_id = parts[-1].replace(".json", "")
+                    condition = parts[-2]
+                    model = "/".join(parts[:-2])
 
                     cache_key = f"{model}/{condition}/{question_id}"
                     self.results_cache[cache_key] = data
@@ -436,7 +482,8 @@ class BatchRunner:
     def _generate_summary(self, results: List[EvaluationResult], elapsed: float) -> Dict[str, Any]:
         """Generate summary statistics."""
         if not results:
-            return {"total": 0}
+            return {"total_evaluations": 0, "elapsed_seconds": elapsed,
+                    "overall_accuracy": 0, "overall_score": 0, "macro_score": 0}
 
         # Group by model and condition
         by_model_condition = defaultdict(list)
@@ -605,13 +652,89 @@ class BatchRunner:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         results_file = output_dir / "results.json"
-        with open(results_file, 'w') as f:
-            json.dump({
-                "run_status": run_status,
-                "metadata": self.metadata,
-                "summary": summary,
-                "results": [asdict(r) for r in results]
-            }, f, indent=2)
+        # Atomic write to avoid corruption on crash/interrupt
+        fd, tmp_path = tempfile.mkstemp(dir=output_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump({
+                    "run_status": run_status,
+                    "metadata": self.metadata,
+                    "summary": summary,
+                    "results": [asdict(r) for r in results]
+                }, f, indent=2)
+            os.replace(tmp_path, results_file)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
         if self.config.verbose and run_status == "complete":
             print(f"✓ Results saved to: {results_file}")
+
+        # Keep the global merged file current so the auditor always shows
+        # all experiments at once (not just the one currently running).
+        self._update_merged_results()
+
+    def _update_merged_results(self, merged_path: str = "results/merged_results.json"):
+        """
+        Re-merge all results/*/results.json files into a single consolidated
+        file at `merged_path`.  Called after every incremental save so the
+        auditor site auto-reloads with the latest data.
+
+        Deduplicates on (question_id, model, condition) — last writer wins,
+        which is fine because each experiment writes identical data for its
+        own records.
+        """
+        import glob as _glob
+
+        patterns = [
+            "results/*/results.json",
+            "results/*/*/results.json",
+        ]
+        files: list[str] = []
+        for pat in patterns:
+            files.extend(_glob.glob(pat))
+
+        # Sort oldest→newest by mtime so the most recent run overwrites older data
+        # for the same (question_id, model, condition) key.
+        files.sort(key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0)
+
+        merged_map: dict = {}  # key → result dict (last writer wins)
+
+        for path in files:
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                for r in data.get("results", []):
+                    key = (r.get("question_id"), r.get("model"), r.get("condition"))
+                    if None not in key:
+                        merged_map[key] = r
+            except Exception:
+                continue
+
+        all_results = list(merged_map.values())
+
+        merged = {
+            "run_status": "merged",
+            "summary": {
+                "total_evaluations": len(all_results),
+                "source": f"auto-merged from {len(files)} results files",
+            },
+            "results": all_results,
+        }
+
+        merged_file = Path(merged_path)
+        merged_file.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=merged_file.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(merged, f, indent=2)
+            os.replace(tmp_path, merged_file)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise

@@ -33,10 +33,9 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 "description": (
                     "Check if flavor descriptors exist in the flavor graph database. "
                     "Returns which descriptors are valid (exist) and which are invalid (don't exist). "
-                    "No call limit — use freely. "
-                    "Validation is optional: you can call get_parent or get_children directly without validating first. "
-                    "If a descriptor is not in the graph, try querying the answer option labels "
-                    "(e.g., 'fruity', 'spices', 'floral') or known category names directly. "
+                    "No call limit. "
+                    "The graph stores short descriptors (single words or short phrases like 'brown sugar', 'black tea'). "
+                    "If an answer option is a multi-word phrase (e.g., 'winey cherry'), validate each component word separately (e.g., 'winey', 'cherry'). "
                     "Maximum 10 descriptors per call."
                 ),
                 "parameters": {
@@ -60,11 +59,13 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 "name": TOOL_GET_PARENT,
                 "description": (
                     "Get the parent node(s) of a flavor descriptor in the hierarchy. "
-                    "Counts toward your reasoning call budget (shared with get_children). "
+                    "This is a traversal call (limited budget, shared with get_children). "
+                    "Only works on descriptors that exist in the graph — "
+                    "returns an error if the descriptor is not found. "
                     "Returns a list of parent descriptor names. "
                     "If the descriptor has no parent (is a root category), returns an empty list. "
                     "Call this repeatedly to trace a path up to the root. "
-                    "Example: get_parent('rose') → ['floral'], get_parent('floral') → [] (root)."
+                    "Example: get_parent('blueberry') → ['berry'], get_parent('berry') → ['fruity']."
                 ),
                 "parameters": {
                     "type": "object",
@@ -84,10 +85,12 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 "name": TOOL_GET_CHILDREN,
                 "description": (
                     "Get the child node(s) of a flavor descriptor in the hierarchy. "
-                    "Counts toward your reasoning call budget (shared with get_parent). "
+                    "This is a traversal call (limited budget, shared with get_parent). "
+                    "Only works on descriptors that exist in the graph — "
+                    "returns an error if the descriptor is not found. "
                     "Returns a list of child descriptor names. "
                     "If the descriptor has no children (is a leaf node), returns an empty list. "
-                    "Example: get_children('floral') → ['rose', 'jasmine', 'lavender']."
+                    "Example: get_children('berry') → ['strawberry', 'blueberry', 'blackberry', 'raspberry']."
                 ),
                 "parameters": {
                     "type": "object",

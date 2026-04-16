@@ -5,6 +5,7 @@ Client for OpenRouter API. Provides access to multiple model providers
 (OpenAI, Anthropic, Google, etc.) through a unified interface.
 """
 
+import json
 import os
 import requests
 import time
@@ -39,7 +40,8 @@ class OpenRouterClient(BaseClient):
         base_url: str = "https://openrouter.ai/api/v1",
         site_url: Optional[str] = None,
         app_name: Optional[str] = None,
-        timeout: int = 60,
+        connect_timeout: int = 30,
+        chunk_timeout: int = 120,
         max_retries: int = 3,
         retry_backoff: List[int] = None,
         **kwargs
@@ -54,7 +56,11 @@ class OpenRouterClient(BaseClient):
             base_url: OpenRouter API base URL
             site_url: Your site URL (for OpenRouter rankings)
             app_name: Your app name (for OpenRouter rankings)
-            timeout: Request timeout in seconds
+            connect_timeout: Seconds to wait for initial TCP connection (default: 30)
+            chunk_timeout: Seconds to wait between streamed chunks (default: 120).
+                           With streaming each read is independently timed, so this
+                           guards against a stuck connection mid-generation without
+                           capping total response length.
             max_retries: Maximum retry attempts for failed requests
             retry_backoff: Retry delays in seconds (default: [2, 4, 8])
             **kwargs: Additional configuration
@@ -70,9 +76,9 @@ class OpenRouterClient(BaseClient):
             )
 
         self.base_url = base_url.rstrip("/")
-        self.site_url = site_url or "https://github.com/b05611038/flavor_graph_traverser"
-        self.app_name = app_name or "FlavorGraphTraverser"
-        self.timeout = timeout
+        self.site_url = site_url or os.getenv("OPENROUTER_SITE_URL", "https://github.com/b05611038/flavor_graph_traverser")
+        self.app_name = app_name or os.getenv("OPENROUTER_APP_NAME", "FlavorGraphTraverser")
+        self.timeout = (connect_timeout, chunk_timeout)  # (connect, read) tuple for requests
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff or [2, 4, 8]
 
@@ -122,8 +128,7 @@ class OpenRouterClient(BaseClient):
         last_error = None
         for attempt in range(self.max_retries):
             try:
-                response = self._make_request(payload)
-                return self._parse_response(response)
+                return self._make_request(payload)
 
             except requests.HTTPError as e:
                 status_code = e.response.status_code
@@ -169,19 +174,30 @@ class OpenRouterClient(BaseClient):
         # All retries exhausted
         raise Exception(f"Max retries ({self.max_retries}) exceeded. Last error: {last_error}")
 
-    def _make_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_request(self, payload: Dict[str, Any]) -> LLMResponse:
         """
-        Make a single API request.
+        Make a single streaming API request and accumulate the response.
+
+        Uses SSE streaming so the per-chunk read timeout (chunk_timeout) applies
+        independently to each network read — a stuck connection is detected promptly
+        regardless of total response length.
 
         Args:
-            payload: Request payload
+            payload: Request payload (stream and stream_options are added here)
 
         Returns:
-            Response JSON
+            LLMResponse assembled from accumulated stream chunks
 
         Raises:
-            requests.HTTPError: If request fails
+            requests.HTTPError: If the HTTP status indicates an error
+            requests.Timeout: If no chunk arrives within chunk_timeout seconds
         """
+        stream_payload = {
+            **payload,
+            "stream": True,
+            "stream_options": {"include_usage": True},  # usage in final chunk
+        }
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -192,63 +208,144 @@ class OpenRouterClient(BaseClient):
         url = f"{self.base_url}/chat/completions"
         response = requests.post(
             url,
-            json=payload,
+            json=stream_payload,
             headers=headers,
-            timeout=self.timeout
+            timeout=self.timeout,  # (connect_timeout, chunk_timeout) tuple
+            stream=True,
         )
         response.raise_for_status()
-        return response.json()
+        return self._parse_streaming_response(response)
 
-    def _parse_response(self, response: Dict[str, Any]) -> LLMResponse:
+    def _parse_streaming_response(self, response: requests.Response) -> LLMResponse:
         """
-        Parse OpenRouter API response.
+        Parse an SSE streaming response into an LLMResponse.
+
+        Accumulates content, reasoning, and tool call deltas across chunks.
+        Usage stats arrive in the final chunk via stream_options.
 
         Args:
-            response: API response JSON
+            response: Streaming requests.Response object
 
         Returns:
-            LLMResponse object
+            LLMResponse assembled from all chunks
         """
-        # Extract message
-        choice = response["choices"][0]
-        message = choice["message"]
-        raw_content = message.get("content", "") or ""
-        tool_calls = message.get("tool_calls")
-
-        # OpenRouter normalizes all reasoning models into message.reasoning (plain text).
-        # This covers: Qwen3 (<think> tags stripped), DeepSeek R1 (reasoning_content remapped),
-        # Grok (internal reasoning surfaced), Kimi K2 thinking variant.
-        # message.reasoning_content is the DeepSeek *direct* API field — not used via OpenRouter.
-        provider_thinking = message.get("reasoning") or message.get("reasoning_content")
-
-        # Defensively strip any remaining inline tags as a fallback.
-        # Under normal OpenRouter usage content is already clean, but this guards
-        # against direct API calls or future models that don't follow the convention.
-        clean_content, tag_thinking = normalize_response(raw_content)
-
-        # Prefer the provider field (already cleanly extracted by OpenRouter)
-        thinking_content = provider_thinking or tag_thinking
-
-        # Extract usage stats
+        content_parts: List[str] = []
+        reasoning_parts: List[str] = []
+        # tool_calls_map: index → {id, type, function: {name, arguments}}
+        tool_calls_map: Dict[int, Dict] = {}
+        finish_reason = None
         usage = None
-        if "usage" in response:
-            usage_data = response["usage"]
-            usage = UsageStats(
-                input_tokens=usage_data.get("prompt_tokens", 0),
-                output_tokens=usage_data.get("completion_tokens", 0),
-                total_tokens=usage_data.get("total_tokens", 0)
+        resolved_model = None  # Actual versioned model ID from API response
+
+        for line in response.iter_lines():
+            if not line:
+                continue
+
+            if isinstance(line, bytes):
+                line = line.decode("utf-8")
+
+            if not line.startswith("data: "):
+                continue
+
+            data_str = line[6:]  # strip "data: " prefix
+
+            if data_str == "[DONE]":
+                break
+
+            try:
+                chunk = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+
+            # Capture resolved model ID from first chunk that has it
+            if resolved_model is None and chunk.get("model"):
+                resolved_model = chunk["model"]
+
+            # Usage arrives in the final chunk when stream_options.include_usage=True
+            if chunk.get("usage"):
+                u = chunk["usage"]
+                usage = UsageStats(
+                    input_tokens=u.get("prompt_tokens", 0),
+                    output_tokens=u.get("completion_tokens", 0),
+                    total_tokens=u.get("total_tokens", 0),
+                )
+
+            choices = chunk.get("choices", [])
+            if not choices:
+                continue
+
+            choice = choices[0]
+            delta = choice.get("delta", {})
+
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+
+            # Accumulate text content
+            if delta.get("content"):
+                content_parts.append(delta["content"])
+
+            # Accumulate reasoning tokens (OpenRouter field: delta.reasoning)
+            if delta.get("reasoning"):
+                reasoning_parts.append(delta["reasoning"])
+
+            # Accumulate tool call deltas
+            # Each delta may carry id/name only in the first chunk for that index;
+            # arguments arrive as successive partial strings to be concatenated.
+            for tc_delta in delta.get("tool_calls", []):
+                idx = tc_delta.get("index", 0)
+                if idx not in tool_calls_map:
+                    tool_calls_map[idx] = {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    }
+                tc = tool_calls_map[idx]
+                if tc_delta.get("id"):
+                    tc["id"] = tc_delta["id"]
+                func = tc_delta.get("function", {})
+                if func.get("name"):
+                    tc["function"]["name"] += func["name"]
+                if func.get("arguments"):
+                    tc["function"]["arguments"] += func["arguments"]
+
+        # Verify stream completed with usable data
+        if not content_parts and not tool_calls_map and finish_reason is None:
+            raise requests.ConnectionError(
+                "Stream ended without content, tool calls, or finish_reason — "
+                "connection may have been dropped prematurely"
             )
 
-        # Extract finish reason
-        finish_reason = choice.get("finish_reason")
+        # Assemble final content
+        raw_content = "".join(content_parts)
+        provider_thinking = "".join(reasoning_parts) or None
+
+        # Defensively strip inline <think> tags as a fallback for non-standard models
+        clean_content, tag_thinking = normalize_response(raw_content)
+        thinking_content = provider_thinking or tag_thinking
+
+        # Convert tool call map to ordered list, filtering out incomplete entries
+        # (e.g. stream interrupted before function name arrived)
+        tool_calls = None
+        if tool_calls_map:
+            complete = [
+                tool_calls_map[i] for i in sorted(tool_calls_map)
+                if tool_calls_map[i].get("function", {}).get("name")
+            ]
+            tool_calls = complete if complete else None
 
         return LLMResponse(
             content=clean_content,
             tool_calls=tool_calls,
             usage=usage,
             finish_reason=finish_reason,
-            raw_response=response,
+            raw_response={
+                "streamed": True,
+                "model": self.model,
+                "finish_reason": finish_reason,
+                "usage": {"prompt_tokens": usage.input_tokens, "completion_tokens": usage.output_tokens, "total_tokens": usage.total_tokens} if usage else None,
+            },
             thinking_content=thinking_content,
+            resolved_model=resolved_model,
         )
 
     def supports_function_calling(self) -> bool:

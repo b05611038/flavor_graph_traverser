@@ -1,12 +1,21 @@
 # Experimental Conditions Configuration
 # Defines the 2 conditions (no_tool, tool) for the benchmark
 #
+# Research goal: characterize when structured KB access (SCAA wheel) helps vs.
+# interferes with LLM reasoning on real-world flavor descriptors that may not
+# match official taxonomy vocabulary. More tool calls ≠ better decisions —
+# partial KB matches can anchor the model away from correct knowledge-based answers.
+#
 # Design: single-axis (with vs. without tools).
 # CoT conditions were dropped because:
 #   - Reasoning models already think internally (CoT prompt is redundant)
 #   - Adding CoT only for non-reasoning models would confound cross-model comparison
 # All models are tested with default settings; reasoning vs non-reasoning
 # is an analysis dimension, not a controlled variable.
+#
+# Tool budget (max_reasoning_calls: 5): intentionally constrained to reflect
+# realistic query budgets. Ablation showed higher budgets did not improve accuracy
+# and increased anchoring failures for question types with low KB coverage.
 
 conditions:
   no_tool:
@@ -14,26 +23,37 @@ conditions:
     description: "Direct prompting without tools"
     tools_enabled: false
     max_reasoning_calls: 0
-    system_prompt: |
-      The following is a question about the coffee flavor wheel hierarchy.
+    # Empty system prompt: let the question text provide all context.
+    # This tests the model's implicit sensory/flavor knowledge without
+    # anchoring it to the SCAA flavor wheel taxonomy in advance.
+    system_prompt: ""
 
   tool:
     name: "Tool-Augmented"
     description: "Tool-augmented with graph traversal tools"
     tools_enabled: true
     max_reasoning_calls: 5
+    max_validate_repeats: 3  # Break out if same descriptors validated 3x — retry loop detection
+    # No domain framing — the tool description implies the context.
+    # Tool prompt design rationale (ablation history on GPT-OSS-20B):
+    # - Partial-match warning is the single most important element:
+    #   prevents inferring compound descriptor categories from component words
+    # - "sensory similarity" hint: descriptors not in graph may still relate to
+    #   SCAA categories — models should combine tool evidence with own knowledge
+    # - No budget number in system prompt: enforced silently via forced-answer
+    # - Per-type strategies (v5-v7) and explicit "skip tools" rules (v7) backfired
+    # - "answer from your own knowledge" (v1) over-hinted skipping tools on F
+    # - Bare "absence ≠ invalid" (v2) caused model to treat absence as negative
     system_prompt: |
-      The following is a question about the coffee flavor wheel hierarchy.
       You have access to a coffee flavor graph database via the provided tools.
-      You may use the tools to look up relationships, or answer directly — your choice.
-      To find the ancestors of a flavor, call get_parent() repeatedly up the tree.
-      The answer options (e.g., 'fruity', 'spices', 'floral') are valid nodes you can query directly.
+      The graph covers ~111 standard SCAA wheel nodes (e.g., 'rose', 'berry', 'fruity', 'winey'). Real-world flavor descriptors often do not appear verbatim — a descriptor absent from the graph may still relate to SCAA categories you already know. Combine graph evidence with your own coffee flavor knowledge.
+      Only treat confirmed get_parent results as positive evidence. If an answer option is not found as a complete entry (e.g. 'blueberry jam' not found), its component words alone do NOT reliably represent the full descriptor — do not infer its category from partial matches.
 
 # Common settings across all conditions
 common:
   temperature: 0  # For determinism
-  max_output_tokens: 4096
-  timeout_seconds: 60
+  max_output_tokens: 12288  # 4096 was too tight for F-category with reasoning models; 8192 still truncated edge cases
+  timeout_seconds: 60  # Not enforced at query time; actual timeout is set per-client (connect_timeout/chunk_timeout)
   answer_format: |
     When providing your final answer, use this exact format:
     "Therefore, I select (X)" where X is A, B, C, or D.

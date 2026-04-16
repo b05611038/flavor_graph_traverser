@@ -28,9 +28,9 @@ class GraphToolExecutor:
         >>> {'valid': ['rose', 'chocolate'], 'invalid': ['unknown']}
         >>>
         >>> # Get parent
-        >>> result = executor.execute('get_parent', {'descriptor': 'rose'})
+        >>> result = executor.execute('get_parent', {'descriptor': 'blueberry'})
         >>> print(result)
-        >>> {'descriptor': 'rose', 'parents': ['floral']}
+        >>> {'descriptor': 'blueberry', 'parents': ['berry'], 'error': None}
     """
 
     def __init__(self, graph: CoffeeDescriptionGraph):
@@ -84,8 +84,10 @@ class GraphToolExecutor:
             {'valid': ['rose'], 'invalid': ['unknown']}
         """
         # Limit to 10 descriptors
+        truncated = False
         if len(descriptors) > 10:
             descriptors = descriptors[:10]
+            truncated = True
 
         valid = []
         invalid = []
@@ -93,15 +95,18 @@ class GraphToolExecutor:
         all_descriptors = self.graph.descriptions
 
         for descriptor in descriptors:
-            if descriptor in all_descriptors:
+            if descriptor and isinstance(descriptor, str) and descriptor in all_descriptors:
                 valid.append(descriptor)
             else:
                 invalid.append(descriptor)
 
-        return {
+        result = {
             "valid": valid,
             "invalid": invalid
         }
+        if truncated:
+            result["warning"] = "Input truncated to first 10 descriptors"
+        return result
 
     def get_parent(self, descriptor: str) -> Dict[str, Any]:
         """
@@ -117,8 +122,8 @@ class GraphToolExecutor:
             ValueError: If descriptor doesn't exist in graph
 
         Example:
-            >>> executor.get_parent('rose')
-            {'descriptor': 'rose', 'parents': ['floral'], 'error': None}
+            >>> executor.get_parent('blueberry')
+            {'descriptor': 'blueberry', 'parents': ['berry'], 'error': None}
             >>> executor.get_parent('unknown')
             {'descriptor': 'unknown', 'parents': None, 'error': 'Descriptor not found in graph'}
         """
@@ -127,7 +132,7 @@ class GraphToolExecutor:
             return {
                 "descriptor": descriptor,
                 "parents": None,
-                "error": f"Descriptor '{descriptor}' not found in graph. Use validate_descriptors first."
+                "error": f"Descriptor '{descriptor}' not found in graph. The graph stores short descriptors — if this is a multi-word phrase, try each component word separately with validate_descriptors."
             }
 
         try:
@@ -158,8 +163,8 @@ class GraphToolExecutor:
             ValueError: If descriptor doesn't exist in graph
 
         Example:
-            >>> executor.get_children('floral')
-            {'descriptor': 'floral', 'children': ['rose', 'jasmine', 'lavender'], 'error': None}
+            >>> executor.get_children('berry')
+            {'descriptor': 'berry', 'children': ['strawberry', 'blueberry', 'blackberry', 'raspberry'], 'error': None}
             >>> executor.get_children('unknown')
             {'descriptor': 'unknown', 'children': None, 'error': 'Descriptor not found in graph'}
         """
@@ -168,7 +173,7 @@ class GraphToolExecutor:
             return {
                 "descriptor": descriptor,
                 "children": None,
-                "error": f"Descriptor '{descriptor}' not found in graph. Use validate_descriptors first."
+                "error": f"Descriptor '{descriptor}' not found in graph. The graph stores short descriptors — if this is a multi-word phrase, try each component word separately with validate_descriptors."
             }
 
         try:

@@ -10,13 +10,20 @@ Available tools:
   get_children          Get the child node(s) of a descriptor.
                         Args: {"descriptor": "word"}
 
-The answer options in each question (e.g., 'fruity', 'spices', 'floral') are valid graph nodes
-you can query directly — you do not need to validate them first.
-To find ancestors of a flavor, call get_parent() repeatedly up the tree.
+To find ancestors of a flavor, validate the descriptor first, then call get_parent() repeatedly up the tree.
 
-Example traversal:
-TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "jasmine"}}
-TOOL_RESULT: {"descriptor": "jasmine", "parents": ["floral"], "error": null}
-TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "floral"}}
-TOOL_RESULT: {"descriptor": "floral", "parents": [], "error": null}
-(empty parents means 'floral' is a root category)
+Example: validate, then traverse upward:
+TOOL_CALL: {"name": "validate_descriptors", "args": {"descriptors": ["blueberry", "blueberry jam"]}}
+TOOL_RESULT: {"valid": ["blueberry"], "invalid": ["blueberry jam"]}
+TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "blueberry"}}
+TOOL_RESULT: {"descriptor": "blueberry", "parents": ["berry"], "error": null}
+TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "berry"}}
+TOOL_RESULT: {"descriptor": "berry", "parents": ["fruity"], "error": null}
+TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "fruity"}}
+TOOL_RESULT: {"descriptor": "fruity", "parents": ["ROOT:coffee_flavor_wheel"], "error": null}
+(ROOT:coffee_flavor_wheel means 'fruity' is a top-level category — stop traversing)
+
+Example: get children of a node:
+TOOL_CALL: {"name": "get_children", "args": {"descriptor": "berry"}}
+TOOL_RESULT: {"descriptor": "berry", "children": ["strawberry", "blueberry", "blackberry", "raspberry"], "error": null}
+(empty children means the descriptor is a leaf node)

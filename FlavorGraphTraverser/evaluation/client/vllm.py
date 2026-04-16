@@ -12,6 +12,7 @@ Example:
     response = client.query(messages=[...], tools=[...])
 """
 
+import json
 import time
 import requests
 from typing import Dict, List, Optional, Any
@@ -28,6 +29,7 @@ class VLLMClient(BaseClient):
 
     Supports:
     - Function calling (tool_calls)
+    - Streaming with per-chunk timeout (no SIGALRM needed)
     - Automatic retries with exponential backoff
     """
 
@@ -35,14 +37,15 @@ class VLLMClient(BaseClient):
         self,
         model: str,
         base_url: str = "http://localhost:8000/v1",
-        timeout: int = 120,
-        max_retries: int = 3,
+        connect_timeout: int = 30,
+        chunk_timeout: int = 90,
+        max_retries: int = 1,
         retry_backoff: List[int] = None,
         **kwargs
     ):
         super().__init__(model, **kwargs)
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+        self.timeout = (connect_timeout, chunk_timeout)  # (connect, read) tuple for requests
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff or [2, 4, 8]
 
@@ -71,8 +74,7 @@ class VLLMClient(BaseClient):
         last_error = None
         for attempt in range(self.max_retries):
             try:
-                response = self._make_request(payload)
-                return self._parse_response(response)
+                return self._make_request(payload)
 
             except requests.HTTPError as e:
                 status_code = e.response.status_code
@@ -87,50 +89,127 @@ class VLLMClient(BaseClient):
 
             except (requests.Timeout, requests.RequestException) as e:
                 wait_time = self.retry_backoff[min(attempt, len(self.retry_backoff) - 1)]
-                print(f"Request error. Retrying in {wait_time}s...")
+                print(f"Request timed out or failed. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 last_error = e
                 continue
 
         raise Exception(f"Max retries ({self.max_retries}) exceeded. Last error: {last_error}")
 
-    def _make_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_request(self, payload: Dict[str, Any]) -> LLMResponse:
+        stream_payload = {
+            **payload,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+
         headers = {"Content-Type": "application/json"}
         url = f"{self.base_url}/chat/completions"
-        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+
+        response = requests.post(
+            url,
+            json=stream_payload,
+            headers=headers,
+            timeout=self.timeout,  # (connect_timeout, chunk_timeout) tuple
+            stream=True,
+        )
         response.raise_for_status()
-        return response.json()
+        return self._parse_streaming_response(response)
 
-    def _parse_response(self, response: Dict[str, Any]) -> LLMResponse:
-        choice = response["choices"][0]
-        message = choice["message"]
-        raw_content = message.get("content", "") or ""
-        tool_calls = message.get("tool_calls")
+    def _parse_streaming_response(self, response: requests.Response) -> LLMResponse:
+        content_parts: List[str] = []
+        reasoning_parts: List[str] = []
+        tool_calls_map: Dict[int, Dict] = {}
+        finish_reason = None
+        usage = None
 
-        # vLLM surfaces reasoning-model thinking in message.reasoning
-        # (same convention as OpenRouter). Capture it so we don't lose it.
-        provider_thinking = message.get("reasoning") or message.get("reasoning_content")
+        for line in response.iter_lines():
+            if not line:
+                continue
+
+            if isinstance(line, bytes):
+                line = line.decode("utf-8")
+
+            if not line.startswith("data: "):
+                continue
+
+            data_str = line[6:]
+
+            if data_str == "[DONE]":
+                break
+
+            try:
+                chunk = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+
+            if chunk.get("usage"):
+                u = chunk["usage"]
+                usage = UsageStats(
+                    input_tokens=u.get("prompt_tokens", 0),
+                    output_tokens=u.get("completion_tokens", 0),
+                    total_tokens=u.get("total_tokens", 0),
+                )
+
+            choices = chunk.get("choices", [])
+            if not choices:
+                continue
+
+            choice = choices[0]
+            delta = choice.get("delta", {})
+
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+
+            if delta.get("content"):
+                content_parts.append(delta["content"])
+
+            if delta.get("reasoning"):
+                reasoning_parts.append(delta["reasoning"])
+
+            for tc_delta in delta.get("tool_calls", []):
+                idx = tc_delta.get("index", 0)
+                if idx not in tool_calls_map:
+                    tool_calls_map[idx] = {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    }
+                tc = tool_calls_map[idx]
+                if tc_delta.get("id"):
+                    tc["id"] = tc_delta["id"]
+                func = tc_delta.get("function", {})
+                if func.get("name"):
+                    tc["function"]["name"] += func["name"]
+                if func.get("arguments"):
+                    tc["function"]["arguments"] += func["arguments"]
+
+        raw_content = "".join(content_parts)
+        provider_thinking = "".join(reasoning_parts) or None
 
         clean_content, tag_thinking = normalize_response(raw_content)
-
-        # Provider-level reasoning takes priority over inline <think> tags
         thinking_content = provider_thinking or tag_thinking
 
-        usage = None
-        if "usage" in response:
-            u = response["usage"]
-            usage = UsageStats(
-                input_tokens=u.get("prompt_tokens", 0),
-                output_tokens=u.get("completion_tokens", 0),
-                total_tokens=u.get("total_tokens", 0),
-            )
+        # Filter out incomplete tool calls (e.g. stream interrupted before name arrived)
+        tool_calls = None
+        if tool_calls_map:
+            complete = [
+                tool_calls_map[i] for i in sorted(tool_calls_map)
+                if tool_calls_map[i].get("function", {}).get("name")
+            ]
+            tool_calls = complete if complete else None
 
         return LLMResponse(
             content=clean_content,
             tool_calls=tool_calls,
             usage=usage,
-            finish_reason=choice.get("finish_reason"),
-            raw_response=response,
+            finish_reason=finish_reason,
+            raw_response={
+                "streamed": True,
+                "model": self.model,
+                "finish_reason": finish_reason,
+                "usage": {"prompt_tokens": usage.input_tokens, "completion_tokens": usage.output_tokens, "total_tokens": usage.total_tokens} if usage else None,
+            },
             thinking_content=thinking_content,
         )
 

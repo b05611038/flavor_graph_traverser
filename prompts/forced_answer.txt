@@ -1,1 +1,1 @@
-You have used your tool call budget ({max_calls} reasoning calls). No more tool calls are allowed. Based on the information gathered above, you MUST provide your final answer now.
+Tool access has ended. Based on what you have gathered, provide your final answer now.

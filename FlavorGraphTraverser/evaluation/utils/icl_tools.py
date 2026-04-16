@@ -10,7 +10,7 @@ Format the model is instructed to use:
     TOOL_CALL: {"name": "get_parent", "args": {"descriptor": "jasmine"}}
 
 Tool results are injected as:
-    TOOL_RESULT: {"parents": ["floral"]}
+    TOOL_RESULT: {"descriptor": "blueberry", "parents": ["berry"], "error": null}
 
 If the model does not output a TOOL_CALL line, the turn is treated as a
 direct answer attempt — parse_answer() runs on the text as normal. This
@@ -50,12 +50,12 @@ def parse_icl_tool_call(text: str) -> Tuple[Optional[str], Optional[Dict[str, An
 
     Example:
         >>> name, args = parse_icl_tool_call(
-        ...     'Let me check.\\nTOOL_CALL: {"name": "get_parent", "args": {"descriptor": "jasmine"}}'
+        ...     'Let me check.\\nTOOL_CALL: {"name": "get_parent", "args": {"descriptor": "blueberry"}}'
         ... )
         >>> name
         'get_parent'
         >>> args
-        {'descriptor': 'jasmine'}
+        {'descriptor': 'blueberry'}
     """
     if not text:
         return None, None

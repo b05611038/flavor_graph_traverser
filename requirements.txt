@@ -4,7 +4,8 @@ python-igraph>=0.10.0,<1.0.0
 
 # Evaluation and auditing
 pyyaml>=6.0.0
-requests>=2.28.0
+requests>=2.28.0,<3.0.0
+python-dotenv>=1.0.0
 flask>=2.3.0
 
 # Optional: For development and testing

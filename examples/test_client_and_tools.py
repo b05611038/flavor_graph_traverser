@@ -102,9 +102,9 @@ def test_graph_tools():
         
         # Test get_children
         print("Test 3: get_children")
-        if 'floral' in graph.descriptions:
-            result = executor.get_children('floral')
-            print(f"  get_children('floral')")
+        if 'berry' in graph.descriptions:
+            result = executor.get_children('berry')
+            print(f"  get_children('berry')")
             print(f"  Children: {result['children']}")
             print(f"  Error: {result['error']}")
         print()

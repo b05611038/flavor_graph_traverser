@@ -73,7 +73,7 @@ def load_system_graph(
         >>> from FlavorGraphTraverser import load_system_graph
         >>> graph = load_system_graph()
         >>> print(graph.descriptions[:5])
-        >>> children = graph.children_of_description('floral')
+        >>> children = graph.children_of_description('berry')
     """
     # If no file specified, look for default files
     if data_file is None:

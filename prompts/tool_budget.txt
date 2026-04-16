@@ -1,1 +1,2 @@
-Tool call budget: you may call get_parent and get_children up to {max_calls} times in total (shared budget). validate_descriptors has no call limit.
+validate_descriptors has no call limit. get_parent and get_children have a limited budget.
+Tip: use validate_descriptors to check whether a descriptor exists in the graph before calling get_parent or get_children, which saves traversal quota.

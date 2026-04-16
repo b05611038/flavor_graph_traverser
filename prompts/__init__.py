@@ -10,9 +10,8 @@ Usage:
     # Simple load (no placeholders)
     system = load_prompt("judge_system")
 
-    # With substitution
+    # With placeholder substitution
     fmt = load_prompt("answer_format_single", options_list="A, B, C, or D")
-    budget = load_prompt("tool_budget", max_calls=5)
 """
 
 from pathlib import Path
@@ -44,8 +43,8 @@ def load_prompt(name: str, **kwargs) -> str:
     Examples:
         >>> load_prompt("judge_system")
         'You are an expert coffee flavor evaluator...'
-        >>> load_prompt("tool_budget", max_calls=5)
-        'Tool call budget: you may call get_parent and get_children up to 5 times...'
+        >>> load_prompt("answer_format_single", options_list="A, B, C, or D")
+        'You MUST end your response with exactly this format...'
     """
     template = _read_template(name)
     if kwargs:

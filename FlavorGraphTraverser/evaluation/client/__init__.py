@@ -67,6 +67,8 @@ def create_client(
         )
     """
     client_type = client_type.lower()
+    # Filter out None values so client class defaults are respected
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     if client_type == "ollama":
         return OllamaClient(model=model, **kwargs)

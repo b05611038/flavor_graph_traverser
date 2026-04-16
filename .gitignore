@@ -45,8 +45,9 @@ data/flagged_questions.jsonl
 !data/filtering/example_whitelist.txt
 !data/questions/example_questions.json
 
-# Archived one-off scripts (not tracked)
+# Archived one-off scripts and old question drafts (not tracked)
 scripts/archive/
+data/questions/archive/
 
 # Reference code (internal)
 reference_code/

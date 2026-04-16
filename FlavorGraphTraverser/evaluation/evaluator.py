@@ -49,12 +49,12 @@ class EvaluationResult:
     # Question data
     question_text: str
     options: Dict[str, str]
-    correct_answer: str
-    
+    correct_answer: Any  # str for single-choice, List[str] for multi-select
+
     # Result
-    model_answer: Optional[str]
+    model_answer: Any  # str for single-choice, List[str] for multi-select, None for F-category
     is_correct: bool
-    status: str  # "success", "parse_error", "api_error", "refusal", "tool_error"
+    status: str  # "success", "parse_error", "api_error", "tool_error", "no_judge", "judge_parse_error"
     
     # Metrics
     metrics: EvaluationMetrics
@@ -79,6 +79,10 @@ class EvaluationResult:
     # Continuous score (0–1): binary for single-choice, F1 for multi-select,
     # judge_score/5 for F-category
     score: float = 0.0
+
+    # Actual versioned model ID returned by the API (e.g. anthropic/claude-sonnet-4-6-20250514)
+    # None for older cached results that predate this field.
+    resolved_model: Optional[str] = None
 
 
 class QuestionEvaluator:
@@ -122,6 +126,8 @@ class QuestionEvaluator:
         self.client = client
         self.executor = executor
         self.condition = condition
+        if tool_mode not in ("native", "icl"):
+            raise ValueError(f"Invalid tool_mode '{tool_mode}': must be 'native' or 'icl'")
         self.tool_mode = tool_mode
         self.judge = LLMJudge(judge_client) if judge_client is not None else None
 
@@ -135,7 +141,17 @@ class QuestionEvaluator:
 
         # Get tools if enabled
         self.tools = get_tool_definitions() if self.condition_config["tools_enabled"] else None
+
+        # Resolved model ID from API (set on first successful response)
+        self._resolved_model: Optional[str] = None
         
+    def _query(self, messages, **kwargs):
+        """Wrapper around client.query that captures the resolved model ID on first call."""
+        response = self.client.query(messages, **kwargs)
+        if self._resolved_model is None and getattr(response, "resolved_model", None):
+            self._resolved_model = response.resolved_model
+        return response
+
     def evaluate(self, question: Dict[str, Any]) -> EvaluationResult:
         """
         Evaluate a single question.
@@ -188,7 +204,7 @@ class QuestionEvaluator:
                 is_correct = (judge_score >= JUDGE_PASS_THRESHOLD) if judge_score is not None else False
 
             elif is_multiselect:
-                # A1, A4: multi-select answer parsing
+                # A1, A4, A5: multi-select answer parsing
                 if self.condition_config["tools_enabled"]:
                     if self.tool_mode == "icl":
                         raw_text, parse_result, metrics, errors = self._evaluate_with_icl_tools(
@@ -201,16 +217,21 @@ class QuestionEvaluator:
                     # raw_text here is the last parsed single-letter (may be None);
                     # re-parse the full conversation for multiselect
                     last_assistant = self._last_assistant_content(messages)
-                    ms_result = parse_multiselect_answer(last_assistant)
+                    ms_result = parse_multiselect_answer(
+                        last_assistant,
+                        thinking_content=self._last_assistant_thinking(messages),
+                        model_id=self.client.model,
+                    )
                 else:
                     raw_text, parse_result, metrics, errors = self._evaluate_direct(
                         messages, metrics
                     )
-                    ms_result = parse_multiselect_answer(parse_result.matched_text or "")
-                    if not ms_result.success:
-                        # parse_result.matched_text may be partial; try full response
-                        last_assistant = self._last_assistant_content(messages)
-                        ms_result = parse_multiselect_answer(last_assistant)
+                    last_assistant = self._last_assistant_content(messages)
+                    ms_result = parse_multiselect_answer(
+                        last_assistant,
+                        thinking_content=self._last_assistant_thinking(messages),
+                        model_id=self.client.model,
+                    )
 
                 model_answer = ms_result.answers  # list or None
                 correct = question.get("correct_answer", [])
@@ -222,9 +243,10 @@ class QuestionEvaluator:
                     status = "parse_error"
                 judge_score = None
                 judge_result_dict = None
+                parse_result = ms_result  # store multiselect parse result, not single-choice
 
             else:
-                # A2, A3, A5, E1, E2, E3: single-choice
+                # A2, A3, E1, E2, E3: single-choice
                 if self.condition_config["tools_enabled"]:
                     if self.tool_mode == "icl":
                         model_answer, parse_result, metrics, errors = self._evaluate_with_icl_tools(
@@ -269,6 +291,7 @@ class QuestionEvaluator:
                 question_id=question.get("id", "unknown"),
                 model=self.client.model,
                 condition=self.condition,
+                resolved_model=self._resolved_model,
                 question_text=question.get("text", ""),
                 options=question.get("options", {}),
                 correct_answer=question.get("correct_answer", ""),
@@ -293,6 +316,7 @@ class QuestionEvaluator:
                 question_id=question.get("id", "unknown"),
                 model=self.client.model,
                 condition=self.condition,
+                resolved_model=self._resolved_model,
                 question_text=question.get("text", ""),
                 options=question.get("options", {}),
                 correct_answer=question.get("correct_answer", ""),
@@ -331,7 +355,7 @@ class QuestionEvaluator:
         """
         errors = []
         try:
-            response = self.client.query(
+            response = self._query(
                 messages,
                 temperature=self.common_config["temperature"],
                 max_tokens=self.common_config["max_output_tokens"],
@@ -359,6 +383,13 @@ class QuestionEvaluator:
                 return msg.content
         return ""
 
+    def _last_assistant_thinking(self, messages: List[Message]) -> Optional[str]:
+        """Return thinking_content of the last assistant message (for reasoning models)."""
+        for msg in reversed(messages):
+            if msg.role == "assistant":
+                return getattr(msg, "thinking_content", None)
+        return None
+
     def _run_judge(
         self,
         question: Dict[str, Any],
@@ -374,8 +405,15 @@ class QuestionEvaluator:
         if self.judge is None:
             return None, None, "no_judge"
 
-        if errors and any(e.get("type") == "api_error" for e in errors):
-            return None, None, "api_error"
+        if errors:
+            if any(e.get("type") == "api_error" for e in errors):
+                return None, None, "api_error"
+            if any(e.get("type") == "tool_error" for e in errors):
+                # Tool errors present but model still produced a response — judge it,
+                # but note: status will reflect judge outcome, not tool failure.
+                # If no response was produced, short-circuit.
+                if not model_response:
+                    return None, None, "tool_error"
 
         judge_result = self.judge.evaluate(question, model_response or "")
 
@@ -402,8 +440,7 @@ class QuestionEvaluator:
         # System message — inject tool call budget when tools are enabled
         system_prompt = self.condition_config["system_prompt"].rstrip()
         if self.condition_config["tools_enabled"]:
-            max_calls = self.condition_config["max_reasoning_calls"]
-            system_prompt += "\n" + load_prompt("tool_budget", max_calls=max_calls)
+            system_prompt += "\n" + load_prompt("tool_budget")
         messages = [Message(role="system", content=system_prompt)]
         
         # User message with question
@@ -446,7 +483,7 @@ class QuestionEvaluator:
         
         try:
             # Single turn
-            response = self.client.query(
+            response = self._query(
                 messages,
                 temperature=self.common_config["temperature"],
                 max_tokens=self.common_config["max_output_tokens"]
@@ -466,10 +503,14 @@ class QuestionEvaluator:
             ))
 
             # Parse answer
-            parse_result = parse_answer(response.content)
-            
+            parse_result = parse_answer(
+                response.content,
+                thinking_content=response.thinking_content,
+                model_id=self.client.model,
+            )
+
             return parse_result.answer, parse_result, metrics, errors
-            
+
         except Exception as e:
             errors.append({"type": "api_error", "message": str(e)})
             return None, AnswerParseResult(None, None, None), metrics, errors
@@ -483,15 +524,21 @@ class QuestionEvaluator:
         """Evaluate with tool-augmented loop (tool condition)."""
         errors = []
         max_reasoning_calls = self.condition_config["max_reasoning_calls"]
-        
+
         reasoning_calls = 0
-        
+        tool_call_counter = 0
+        # Track repeated validate_descriptors calls: canonical_key → count
+        # If the model calls validate with the same descriptors 3+ times,
+        # it's stuck in a retry loop and will never progress on its own.
+        _validate_repeat: dict = {}
+        _max_validate_repeats = self.condition_config.get("max_validate_repeats", 3)
+
         while reasoning_calls < max_reasoning_calls:
             metrics.total_turns += 1
             
             try:
                 # Query LLM
-                response = self.client.query(
+                response = self._query(
                     messages,
                     tools=self.tools,
                     temperature=self.common_config["temperature"],
@@ -512,41 +559,79 @@ class QuestionEvaluator:
                     thinking_content=response.thinking_content,
                 ))
                 
-                # Check for answer in response
-                parse_result = parse_answer(response.content or "")
-                if parse_result.success:
-                    # Model answered
-                    metrics.answered_early = (reasoning_calls < max_reasoning_calls)
-                    return parse_result.answer, parse_result, metrics, errors
-                
+                # Check for answer in response — only if model made no tool calls.
+                # If tool calls are present, the model is still in reasoning mode;
+                # the "Last letter" fallback in parse_answer would otherwise match
+                # isolated letters (e.g. "a" in "as a complete entry") in the
+                # reasoning preamble and cause a premature early return before the
+                # tool call is processed.
+                if not response.tool_calls:
+                    parse_result = parse_answer(
+                        response.content or "",
+                        thinking_content=response.thinking_content,
+                        model_id=self.client.model,
+                    )
+                    if parse_result.success:
+                        # Model answered
+                        metrics.answered_early = (reasoning_calls < max_reasoning_calls)
+                        return parse_result.answer, parse_result, metrics, errors
+
                 # Handle tool calls
                 if response.tool_calls:
+                    _hit_loop = False
                     for tool_call in response.tool_calls:
                         tool_name = tool_call.get("function", {}).get("name") or tool_call.get("name")
                         tool_args_str = tool_call.get("function", {}).get("arguments") or tool_call.get("arguments", "{}")
-                        
+
+                        # Validate tool_name before using it
+                        tool_call_counter += 1
+                        fallback_id = f"call_{tool_call_counter}"
+                        if not tool_name:
+                            errors.append({"type": "tool_error", "tool": "unknown", "message": "Tool call missing function name"})
+                            messages.append(Message(
+                                role="tool",
+                                content=json.dumps({"error": "Tool call missing function name"}),
+                                tool_call_id=tool_call.get("id", fallback_id),
+                                name="unknown"
+                            ))
+                            continue
+
                         # Parse arguments
                         try:
                             tool_args = json.loads(tool_args_str) if isinstance(tool_args_str, str) else tool_args_str
-                        except:
-                            tool_args = tool_args_str
-                        
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            tool_args = {}
+                        if not isinstance(tool_args, dict):
+                            tool_args = {}
+
                         # Track call type
                         if tool_name == TOOL_VALIDATE:
                             metrics.validation_calls += 1
+                            # Detect retry loop: same descriptors called repeatedly
+                            _key = tuple(sorted(tool_args.get("descriptors", [])))
+                            _validate_repeat[_key] = _validate_repeat.get(_key, 0) + 1
+                            if _validate_repeat[_key] >= _max_validate_repeats:
+                                messages.append(Message(
+                                    role="tool",
+                                    content=json.dumps({"error": f"Repeated call detected ({_validate_repeat[_key]}x same descriptors). These descriptors are not in the graph. Please answer based on your own knowledge."}),
+                                    tool_call_id=tool_call.get("id", fallback_id),
+                                    name=tool_name,
+                                ))
+                                _hit_loop = True
+                                break
                         elif tool_name in [TOOL_GET_PARENT, TOOL_GET_CHILDREN]:
                             reasoning_calls += 1
                             metrics.reasoning_calls = reasoning_calls
-                        
+
                         # Execute tool
                         try:
                             tool_result = self.executor.execute(tool_name, tool_args)
-                            
+
                             # Add tool result to messages
                             messages.append(Message(
                                 role="tool",
                                 content=json.dumps(tool_result),
-                                tool_call_id=tool_call.get("id", f"call_{len(messages)}"),
+                                tool_call_id=tool_call.get("id", fallback_id),
                                 name=tool_name
                             ))
                         except Exception as e:
@@ -559,34 +644,33 @@ class QuestionEvaluator:
                             messages.append(Message(
                                 role="tool",
                                 content=json.dumps({"error": str(e)}),
-                                tool_call_id=tool_call.get("id", f"call_{len(messages)}"),
+                                tool_call_id=tool_call.get("id", fallback_id),
                                 name=tool_name
                             ))
+                    if _hit_loop:
+                        break  # exit outer while → forced-answer prompt
                 else:
                     # No tool calls and no answer - fall through to forced-answer prompt
                     break
-                
+
             except Exception as e:
                 errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
                 return None, AnswerParseResult(None, None, None), metrics, errors
         
         # Force answer — two-stage approach:
-        # Stage 1: emphatic message in full context with tool_choice="none".
-        #   Strong models can synthesise tool findings into their answer here.
+        # Stage 1: inject transition message and strip tools entirely.
+        #   The model sees "Tool access has ended" and must synthesise findings.
         # Stage 2 (fallback): context surgery — clean [system, question, forced]
         #   for models that return empty when stuck in tool-history context.
         metrics.total_turns += 1
-        max_calls = self.condition_config["max_reasoning_calls"]
         format_hint = self._answer_format_hint(messages)
-        emphatic_content = load_prompt("forced_answer", max_calls=max_calls) + format_hint
+        emphatic_content = load_prompt("forced_answer") + format_hint
         emphatic_msg = Message(role="user", content=emphatic_content)
         messages.append(emphatic_msg)
 
         try:
-            response = self.client.query(
+            response = self._query(
                 messages,
-                tools=self.tools,
-                tool_choice="none",
                 temperature=self.common_config["temperature"],
                 max_tokens=self.common_config["max_output_tokens"]
             )
@@ -602,7 +686,11 @@ class QuestionEvaluator:
                     content=response.content,
                     thinking_content=response.thinking_content,
                 ))
-                parse_result = parse_answer(response.content)
+                parse_result = parse_answer(
+                    response.content,
+                    thinking_content=response.thinking_content,
+                    model_id=self.client.model,
+                )
                 return parse_result.answer, parse_result, metrics, errors
         except Exception as e:
             errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
@@ -612,10 +700,9 @@ class QuestionEvaluator:
         fallback_content = load_prompt("forced_answer_fallback") + format_hint
         fallback_msg = Message(role="user", content=fallback_content)
         clean_messages = messages[:2] + [fallback_msg]
-        messages.append(fallback_msg)
 
         try:
-            response = self.client.query(
+            response = self._query(
                 clean_messages,
                 temperature=self.common_config["temperature"],
                 max_tokens=self.common_config["max_output_tokens"]
@@ -625,18 +712,24 @@ class QuestionEvaluator:
                 metrics.output_tokens += response.usage.output_tokens
                 metrics.total_tokens += response.usage.total_tokens
 
+            # Record both the fallback prompt and response in conversation history
+            messages.append(fallback_msg)
             messages.append(Message(
                 role="assistant",
                 content=response.content or "",
                 thinking_content=response.thinking_content,
             ))
-            parse_result = parse_answer(response.content or "")
+            parse_result = parse_answer(
+                response.content or "",
+                thinking_content=response.thinking_content,
+                model_id=self.client.model,
+            )
             return parse_result.answer, parse_result, metrics, errors
 
         except Exception as e:
             errors.append({"type": "api_error", "turn": metrics.total_turns, "message": str(e)})
             return None, AnswerParseResult(None, None, None), metrics, errors
-    
+
     def _evaluate_with_icl_tools(
         self,
         messages: List[Message],
@@ -654,11 +747,11 @@ class QuestionEvaluator:
         If the model does not output TOOL_CALL, parse_answer() runs on the
         response — the model effectively answers from its own knowledge.
         """
-        import json as _json
-
         errors = []
         max_reasoning_calls = self.condition_config["max_reasoning_calls"]
         reasoning_calls = 0
+        _validate_repeat: dict = {}
+        _max_validate_repeats = self.condition_config.get("max_validate_repeats", 3)
 
         # Inject ICL tool instructions into the system message
         icl_messages = []
@@ -674,7 +767,7 @@ class QuestionEvaluator:
         while reasoning_calls < max_reasoning_calls:
             metrics.total_turns += 1
             try:
-                response = self.client.query(
+                response = self._query(
                     icl_messages,
                     temperature=self.common_config["temperature"],
                     max_tokens=self.common_config["max_output_tokens"],
@@ -699,6 +792,15 @@ class QuestionEvaluator:
                     # Count call type
                     if tool_name == TOOL_VALIDATE:
                         metrics.validation_calls += 1
+                        # Detect retry loop: same descriptors called repeatedly
+                        _key = tuple(sorted(tool_args.get("descriptors", []) if isinstance(tool_args, dict) else []))
+                        _validate_repeat[_key] = _validate_repeat.get(_key, 0) + 1
+                        if _validate_repeat[_key] >= _max_validate_repeats:
+                            icl_messages.append(Message(
+                                role="user",
+                                content=format_icl_tool_result(tool_name, {"error": f"Repeated call detected ({_validate_repeat[_key]}x same descriptors). These descriptors are not in the graph. Please answer based on your own knowledge."}),
+                            ))
+                            break  # exit outer while → forced-answer prompt
                     elif tool_name in [TOOL_GET_PARENT, TOOL_GET_CHILDREN]:
                         reasoning_calls += 1
                         metrics.reasoning_calls = reasoning_calls
@@ -715,7 +817,11 @@ class QuestionEvaluator:
 
                 else:
                     # No tool call — check if the model answered
-                    parse_result = parse_answer(content)
+                    parse_result = parse_answer(
+                        content,
+                        thinking_content=response.thinking_content,
+                        model_id=self.client.model,
+                    )
                     if parse_result.success:
                         metrics.answered_early = (reasoning_calls < max_reasoning_calls)
                         # Sync back to caller's messages list
@@ -733,7 +839,7 @@ class QuestionEvaluator:
         metrics.total_turns += 1
         icl_messages.append(Message(role="user", content=load_prompt("forced_answer_fallback") + self._answer_format_hint(messages)))
         try:
-            response = self.client.query(
+            response = self._query(
                 icl_messages,
                 temperature=self.common_config["temperature"],
                 max_tokens=self.common_config["max_output_tokens"],
@@ -748,7 +854,11 @@ class QuestionEvaluator:
                 content=content,
                 thinking_content=response.thinking_content,
             ))
-            parse_result = parse_answer(content)
+            parse_result = parse_answer(
+                content,
+                thinking_content=response.thinking_content,
+                model_id=self.client.model,
+            )
             messages[:] = icl_messages
             return parse_result.answer, parse_result, metrics, errors
         except Exception as e:
