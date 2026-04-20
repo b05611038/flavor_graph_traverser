@@ -318,6 +318,7 @@ See [docs/TESTING.md](docs/TESTING.md) for complete test documentation.
 | [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) | Design philosophy, F-question rationale |
 | [docs/COST.md](docs/COST.md) | Completed experiment cost breakdown |
 | [docs/RELEASING.md](docs/RELEASING.md) | Release checklist (code, data, HF dataset) |
+| [scripts/analysis/README.md](scripts/analysis/README.md) | Analysis module: tables, figures, statistical tests, mechanistic analyses |
 | [configs/README.md](configs/README.md) | YAML configuration reference |
 | [prompts/](prompts/) | All prompt templates (one `.txt` file per prompt) |
 
