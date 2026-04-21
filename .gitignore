@@ -56,3 +56,14 @@ reference_code/
 logs/
 results/cache/
 results/*/
+
+# Paper writing workspace (FRI submission material — not for public repo)
+paper/
+
+# Citation PDFs and reference files (not for public repo)
+data/citations/
+data/backups/
+data/resolved_models.json
+
+# Experiment outputs
+results/
