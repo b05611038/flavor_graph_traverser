@@ -35,7 +35,57 @@ See [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) for the full experiment
 
 ---
 
-## Quick Start
+## Quick Start — Running the Benchmark
+
+### 1. Install
+
+```bash
+git clone https://github.com/b05611038/flavor_graph_traverser.git
+cd flavor_graph_traverser
+pip install -r requirements.txt
+pip install -e .
+```
+
+### 2. Set your API key
+
+```bash
+cp .env.example .env
+# Add your OpenRouter key to .env:
+# OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+### 3. Run a quick test (10 questions, one model)
+
+```bash
+python scripts/experiment/run_experiment.py \
+  --client openrouter \
+  --graph data/graphs/coffee_flavor_wheel.json \
+  --questions data/questions/benchmark_questions.json \
+  --models anthropic/claude-sonnet-4.6 \
+  --conditions no_tool tool \
+  --max-questions 10 \
+  --yes
+```
+
+Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`.
+
+### 4. Run the full benchmark (275 questions, all conditions)
+
+```bash
+python scripts/experiment/run_experiment.py \
+  --client openrouter \
+  --graph data/graphs/coffee_flavor_wheel.json \
+  --questions data/questions/benchmark_questions.json \
+  --models anthropic/claude-sonnet-4.6 \
+  --conditions no_tool tool \
+  --yes
+```
+
+> **Note:** Use `--graph data/graphs/coffee_flavor_wheel.json` (JSON format). The `.pkl` binary format is not included in the repository.
+
+---
+
+## Library Quick Start
 
 ### 1. Basic Graph Operations
 

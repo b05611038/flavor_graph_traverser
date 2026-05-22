@@ -1,0 +1,669 @@
+{
+  "graph_name": "coffee_flavor_wheel",
+  "root": "ROOT:coffee_flavor_wheel",
+  "descriptions": [
+    "ROOT:coffee_flavor_wheel",
+    "musty/earthy",
+    "floral (middle layer)",
+    "lime",
+    "other",
+    "honey",
+    "alcohol/fermented",
+    "papery",
+    "citrus fruit",
+    "chamomile",
+    "brown sugar",
+    "dried fruit",
+    "berry",
+    "graphfruit",
+    "burnt",
+    "jasmine",
+    "green/vegetative (inner layer)",
+    "spices",
+    "strawberry",
+    "vegetative",
+    "meaty/brothy",
+    "rubber",
+    "olive oil",
+    "hay-like",
+    "animalic",
+    "sour aromatics",
+    "caramelized",
+    "whiskey",
+    "pungent",
+    "raisin",
+    "chocolate",
+    "prune",
+    "fresh",
+    "dark chocolate",
+    "raw",
+    "mapple syrup",
+    "pepper",
+    "apple",
+    "bitter",
+    "vanilla",
+    "fermented",
+    "cinnamon",
+    "under-ripe",
+    "nutty",
+    "grape",
+    "vanillin",
+    "overripe",
+    "ashy",
+    "smoky",
+    "sour/fermented",
+    "sweet aromatics",
+    "overall sweet",
+    "nutmeg",
+    "hazelnut",
+    "other fruit",
+    "grain",
+    "orange",
+    "pomegranate",
+    "malt",
+    "roasted",
+    "musty/dusty",
+    "brown spice",
+    "chemical",
+    "anise",
+    "cereal",
+    "dark green",
+    "coconut",
+    "pipe tobacco",
+    "floral (inner layer)",
+    "cardboard",
+    "molasses",
+    "citric acid",
+    "moldy/damp",
+    "acetic acid",
+    "rose",
+    "phenolic",
+    "blueberry",
+    "blackberry",
+    "cherry",
+    "peach",
+    "stale",
+    "almond",
+    "winey",
+    "pineapple",
+    "papery/musty",
+    "medicinal",
+    "sweet",
+    "isovaleric acid",
+    "nutty/cocoa",
+    "malic acid",
+    "petroleum",
+    "acrid",
+    "raspberry",
+    "clove",
+    "fruity",
+    "skunky",
+    "tobacco",
+    "brown, roast",
+    "peanuts",
+    "beany",
+    "woody",
+    "black_tea",
+    "salty",
+    "herb-like",
+    "green/vegetative (middle layer)",
+    "pear",
+    "peapod",
+    "cocoa",
+    "sour",
+    "butyric acid",
+    "lemon"
+  ],
+  "connections": [
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "other",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "green/vegetative (inner layer)",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "spices",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "sour/fermented",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "roasted",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "floral (inner layer)",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "sweet",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "nutty/cocoa",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "ROOT:coffee_flavor_wheel",
+      "target": "fruity",
+      "path_type": "root-branch"
+    },
+    {
+      "source": "floral (middle layer)",
+      "target": "chamomile",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "floral (middle layer)",
+      "target": "jasmine",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "floral (middle layer)",
+      "target": "rose",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other",
+      "target": "chemical",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other",
+      "target": "papery/musty",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "alcohol/fermented",
+      "target": "whiskey",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "alcohol/fermented",
+      "target": "fermented",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "alcohol/fermented",
+      "target": "overripe",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "alcohol/fermented",
+      "target": "winey",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "citrus fruit",
+      "target": "lime",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "citrus fruit",
+      "target": "graphfruit",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "citrus fruit",
+      "target": "orange",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "citrus fruit",
+      "target": "lemon",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown sugar",
+      "target": "honey",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown sugar",
+      "target": "caramelized",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown sugar",
+      "target": "mapple syrup",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown sugar",
+      "target": "molasses",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "dried fruit",
+      "target": "raisin",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "dried fruit",
+      "target": "prune",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "berry",
+      "target": "strawberry",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "berry",
+      "target": "blueberry",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "berry",
+      "target": "blackberry",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "berry",
+      "target": "raspberry",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "burnt",
+      "target": "ashy",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "burnt",
+      "target": "smoky",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "burnt",
+      "target": "acrid",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "burnt",
+      "target": "brown, roast",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (inner layer)",
+      "target": "olive oil",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (inner layer)",
+      "target": "raw",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (inner layer)",
+      "target": "beany",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (inner layer)",
+      "target": "green/vegetative (middle layer)",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "spices",
+      "target": "pungent",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "spices",
+      "target": "pepper",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "spices",
+      "target": "brown spice",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "nutty",
+      "target": "hazelnut",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "nutty",
+      "target": "almond",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "nutty",
+      "target": "peanuts",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour/fermented",
+      "target": "alcohol/fermented",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour/fermented",
+      "target": "sour",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "apple",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "grape",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "pomegranate",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "coconut",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "cherry",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "peach",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "pineapple",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "other fruit",
+      "target": "pear",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "roasted",
+      "target": "burnt",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "roasted",
+      "target": "cereal",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "roasted",
+      "target": "pipe tobacco",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "roasted",
+      "target": "tobacco",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown spice",
+      "target": "cinnamon",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown spice",
+      "target": "nutmeg",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown spice",
+      "target": "anise",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "brown spice",
+      "target": "clove",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "chemical",
+      "target": "rubber",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "chemical",
+      "target": "bitter",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "chemical",
+      "target": "medicinal",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "chemical",
+      "target": "petroleum",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "chemical",
+      "target": "skunky",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "chemical",
+      "target": "salty",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "cereal",
+      "target": "grain",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "cereal",
+      "target": "malt",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "floral (inner layer)",
+      "target": "floral (middle layer)",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "floral (inner layer)",
+      "target": "black_tea",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "musty/earthy",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "papery",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "meaty/brothy",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "animalic",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "musty/dusty",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "cardboard",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "moldy/damp",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "phenolic",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "stale",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "papery/musty",
+      "target": "woody",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sweet",
+      "target": "brown sugar",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sweet",
+      "target": "vanilla",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sweet",
+      "target": "vanillin",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sweet",
+      "target": "sweet aromatics",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sweet",
+      "target": "overall sweet",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "nutty/cocoa",
+      "target": "nutty",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "nutty/cocoa",
+      "target": "cocoa",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "fruity",
+      "target": "citrus fruit",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "fruity",
+      "target": "dried fruit",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "fruity",
+      "target": "berry",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "fruity",
+      "target": "other fruit",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "vegetative",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "hay-like",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "fresh",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "under-ripe",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "dark green",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "herb-like",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "green/vegetative (middle layer)",
+      "target": "peapod",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "cocoa",
+      "target": "chocolate",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "cocoa",
+      "target": "dark chocolate",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour",
+      "target": "sour aromatics",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour",
+      "target": "citric acid",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour",
+      "target": "acetic acid",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour",
+      "target": "isovaleric acid",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour",
+      "target": "malic acid",
+      "path_type": "sub-category"
+    },
+    {
+      "source": "sour",
+      "target": "butyric acid",
+      "path_type": "sub-category"
+    }
+  ]
+}
