@@ -114,7 +114,29 @@ The vLLM client uses the OpenAI-compatible `/v1/chat/completions` endpoint and r
 
 > **Note:** Use `--graph data/graphs/coffee_flavor_wheel.json` (JSON format). The `.pkl` binary format is not included in the repository.
 
-Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`.
+### Useful flags
+
+| Flag | Description |
+|---|---|
+| `--max-questions N` | Evaluate only the first N questions (quick test) |
+| `--sample N` | Sample N questions per task type (representative smoke test across all 9 types) |
+| `--no-judge` | Skip LLM-as-judge scoring for F-category questions |
+| `--judge-model MODEL_ID` | Override the judge model (default: from `configs/models.yaml`) |
+| `--yes` | Skip the confirmation prompt before running |
+| `--no-cache` | Disable per-question result caching |
+
+### F-category scoring (open-ended questions)
+
+The 15 F-category questions are scored by an LLM judge (0–5 rubric). By default the judge model is read from `configs/models.yaml`. If you do not have a judge model configured, either:
+- Pass `--judge-model anthropic/claude-opus-4.6` (OpenRouter), or
+- Pass `--no-judge` to skip F-category scoring entirely (A/E task results are unaffected).
+
+### Results
+
+Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`. The top-level `summary` field contains:
+- `macro_score` — equal-weighted mean across 9 task types (primary metric in the paper)
+- `by_condition` — scores split by `no_tool` vs `tool`
+- `by_task_type` — per-task-type breakdown (A1–A5, E1–E3, F)
 
 ---
 
