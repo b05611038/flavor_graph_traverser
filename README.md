@@ -46,15 +46,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Set your API key
+### 2. Download the benchmark questions
+
+Download `benchmark_questions.json` from the dataset record:
+
+> https://doi.org/10.5281/zenodo.20339333
+
+Place it at `data/questions/benchmark_questions.json`.
+
+### 3. Option A — Cloud LLMs via OpenRouter
+
+Set your API key:
 
 ```bash
 cp .env.example .env
-# Add your OpenRouter key to .env:
+# Add your key to .env:
 # OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-### 3. Run a quick test (10 questions, one model)
+Run a quick test (10 questions):
 
 ```bash
 python scripts/experiment/run_experiment.py \
@@ -67,9 +77,7 @@ python scripts/experiment/run_experiment.py \
   --yes
 ```
 
-Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`.
-
-### 4. Run the full benchmark (275 questions, all conditions)
+Run the full benchmark (275 questions):
 
 ```bash
 python scripts/experiment/run_experiment.py \
@@ -81,7 +89,32 @@ python scripts/experiment/run_experiment.py \
   --yes
 ```
 
+### 3. Option B — Local LLMs via vLLM
+
+If you have a GPU server running a local model, start a vLLM server first:
+
+```bash
+vllm serve <your-model-id> --host 0.0.0.0 --port 8000
+```
+
+Then run the benchmark pointing at your server:
+
+```bash
+python scripts/experiment/run_experiment.py \
+  --client vllm \
+  --base-url http://localhost:8000/v1 \
+  --graph data/graphs/coffee_flavor_wheel.json \
+  --questions data/questions/benchmark_questions.json \
+  --models <your-model-id> \
+  --conditions no_tool tool \
+  --yes
+```
+
+The vLLM client uses the OpenAI-compatible `/v1/chat/completions` endpoint and requires no API key. Models must support function calling for the tool condition.
+
 > **Note:** Use `--graph data/graphs/coffee_flavor_wheel.json` (JSON format). The `.pkl` binary format is not included in the repository.
+
+Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`.
 
 ---
 
