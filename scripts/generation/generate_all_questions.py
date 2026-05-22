@@ -129,7 +129,7 @@ def main():
 
     # Load graphs
     system_graph_file = "data/graphs/system_graph.pkl"
-    tool_graph_file = "data/graphs/coffee_flavor_wheel.pkl"
+    tool_graph_file = "data/graphs/coffee_flavor_wheel.json"
 
     if not Path(system_graph_file).exists():
         print(f"Graph file not found: {system_graph_file}")

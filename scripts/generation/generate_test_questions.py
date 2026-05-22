@@ -22,7 +22,7 @@ def main():
     print()
 
     # Load graph
-    graph_file = "data/graphs/coffee_flavor_wheel.pkl"
+    graph_file = "data/graphs/coffee_flavor_wheel.json"
 
     if not Path(graph_file).exists():
         print(f"❌ Graph file not found: {graph_file}")

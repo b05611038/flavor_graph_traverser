@@ -15,7 +15,7 @@ Example:
     >>>
     >>> runner = BatchRunner(
     ...     questions_file="data/questions/test_10_questions.json",
-    ...     graph_file="data/graphs/coffee_flavor_wheel.pkl",
+    ...     graph_file="data/graphs/coffee_flavor_wheel.json",
     ...     output_dir="results"
     ... )
     >>>
@@ -69,7 +69,7 @@ class BatchRunner:
     Example:
         >>> runner = BatchRunner(
         ...     questions_file="data/questions/test.json",
-        ...     graph_file="data/graphs/coffee_flavor_wheel.pkl"
+        ...     graph_file="data/graphs/coffee_flavor_wheel.json"
         ... )
         >>>
         >>> runner.run(

@@ -9,7 +9,7 @@ data/
 ├── graphs/               # Graph data files
 │   ├── example_graph.json          # Example graph structure
 │   ├── system_graph.pkl            # [Private] Full SYSTEM graph
-│   └── coffee_flavor_wheel.pkl     # [Private] Coffee flavor wheel graph
+│   └── coffee_flavor_wheel.json    # Coffee Taster's Flavor Wheel (111 nodes)
 │
 ├── filtering/            # Filtering results and configuration
 │   ├── example_filtered_nodes.json # Example filtered output

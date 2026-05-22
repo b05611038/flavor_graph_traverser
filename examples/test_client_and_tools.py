@@ -62,7 +62,7 @@ def test_graph_tools():
     
     try:
         # Load coffee_flavor_wheel graph
-        graph_file = "data/graphs/coffee_flavor_wheel.pkl"
+        graph_file = "data/graphs/coffee_flavor_wheel.json"
         
         if not os.path.exists(graph_file):
             print(f"Graph file not found: {graph_file}")

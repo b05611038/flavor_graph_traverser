@@ -47,7 +47,7 @@ def main():
 
     parser.add_argument(
         "--graph",
-        default="data/graphs/coffee_flavor_wheel.pkl",
+        default="data/graphs/coffee_flavor_wheel.json",
         help="Path to graph pickle file"
     )
 

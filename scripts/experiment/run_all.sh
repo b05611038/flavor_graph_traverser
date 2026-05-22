@@ -49,7 +49,7 @@ LOG_DIR="${RUN_DIR}/logs"
 mkdir -p "$LOG_DIR"
 
 QUESTIONS="data/questions/benchmark_questions.json"
-GRAPH="data/graphs/coffee_flavor_wheel.pkl"
+GRAPH="data/graphs/coffee_flavor_wheel.json"
 
 # Check API key
 if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then

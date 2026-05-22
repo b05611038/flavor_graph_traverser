@@ -27,7 +27,7 @@ def main():
     
     # Load graph
     print("Loading coffee_flavor_wheel graph...")
-    graph_file = "data/graphs/coffee_flavor_wheel.pkl"
+    graph_file = "data/graphs/coffee_flavor_wheel.json"
     if not os.path.exists(graph_file):
         print(f"Error: Graph file not found: {graph_file}")
         print("Please run scripts/dump_graphs.py first")

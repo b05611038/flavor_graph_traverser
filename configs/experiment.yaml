@@ -8,7 +8,7 @@ experiment:
 
 # Data paths
 data:
-  graph_file: "data/graphs/coffee_flavor_wheel.pkl"
+  graph_file: "data/graphs/coffee_flavor_wheel.json"
   questions_file: "data/questions/benchmark_questions.json"
 
 # Client configuration

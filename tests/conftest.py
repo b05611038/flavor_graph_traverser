@@ -20,7 +20,7 @@ def project_root():
 @pytest.fixture(scope="session")
 def coffee_flavor_wheel_path(project_root):
     """Get path to coffee_flavor_wheel graph."""
-    return project_root / "data" / "graphs" / "coffee_flavor_wheel.pkl"
+    return project_root / "data" / "graphs" / "coffee_flavor_wheel.json"
 
 
 @pytest.fixture(scope="session")

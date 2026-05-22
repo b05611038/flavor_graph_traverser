@@ -47,7 +47,7 @@ def check_api_key():
 
 def check_graph():
     """Check that the tool graph loads correctly."""
-    graph_path = Path("data/graphs/coffee_flavor_wheel.pkl")
+    graph_path = Path("data/graphs/coffee_flavor_wheel.json")
     if not graph_path.exists():
         print(f"  {FAIL} Graph file not found: {graph_path}")
         return False

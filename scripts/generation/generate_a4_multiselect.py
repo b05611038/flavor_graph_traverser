@@ -323,7 +323,7 @@ def main():
         root=system_data['root']
     )
 
-    tool_data = load_graph_data("data/graphs/coffee_flavor_wheel.pkl")
+    tool_data = load_graph_data("data/graphs/coffee_flavor_wheel.json")
     tool_nodes = {n.lower() for n in tool_data['descriptions'] if not n.startswith('ROOT:')}
 
     tool_graph = CoffeeDescriptionGraph(

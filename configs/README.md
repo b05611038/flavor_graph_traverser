@@ -171,7 +171,7 @@ experiment:
 
 ```yaml
 data:
-  graph_file: "data/graphs/coffee_flavor_wheel.pkl"
+  graph_file: "data/graphs/coffee_flavor_wheel.json"
   questions_file: "data/questions/all_questions_system.json"
 ```
 

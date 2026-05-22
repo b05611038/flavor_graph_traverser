@@ -112,8 +112,6 @@ python scripts/experiment/run_experiment.py \
 
 The vLLM client uses the OpenAI-compatible `/v1/chat/completions` endpoint and requires no API key. Models must support function calling for the tool condition.
 
-> **Note:** Use `--graph data/graphs/coffee_flavor_wheel.json` (JSON format). The `.pkl` binary format is not included in the repository.
-
 ### Useful flags
 
 | Flag | Description |
@@ -147,7 +145,7 @@ Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`. The top-
 ```python
 from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
 
-data = load_graph_data('data/graphs/coffee_flavor_wheel.pkl')
+data = load_graph_data('data/graphs/coffee_flavor_wheel.json')
 graph = CoffeeDescriptionGraph(
     data['descriptions'],
     data['connections'],
@@ -268,7 +266,7 @@ configs/                        # YAML configuration files
 └── README.md                   # Configuration guide
 
 data/                           # Data files (private, excluded from git)
-├── graphs/                     # Graph .pkl files
+├── graphs/                     # Graph files
 ├── filtering/                  # Filtered nodes + exception lists
 └── questions/                  # Generated benchmark questions
 

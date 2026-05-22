@@ -178,7 +178,7 @@ def project_root():
 
 @pytest.fixture(scope="session")
 def coffee_flavor_wheel_path(project_root):
-    """Path to coffee_flavor_wheel.pkl."""
+    """Path to coffee_flavor_wheel.json."""
 
 @pytest.fixture(scope="session")
 def coffee_flavor_wheel_graph(coffee_flavor_wheel_path):

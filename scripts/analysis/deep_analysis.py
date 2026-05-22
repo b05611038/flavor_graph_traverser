@@ -527,7 +527,7 @@ def vocabulary_gap_analysis(df, output_dir):
     print("=" * 60)
 
     # Load tool graph node names
-    tool_graph_path = Path(__file__).resolve().parents[2] / "data" / "graphs" / "coffee_flavor_wheel.pkl"
+    tool_graph_path = Path(__file__).resolve().parents[2] / "data" / "graphs" / "coffee_flavor_wheel.json"
     with open(tool_graph_path, "rb") as f:
         tool_graph = pickle.load(f)
     tool_nodes_lower = {str(n).lower() for n in tool_graph.nodes()}

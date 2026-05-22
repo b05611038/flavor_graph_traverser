@@ -13,7 +13,7 @@ Example:
     >>> from FlavorGraphTraverser import load_graph_data, CoffeeDescriptionGraph
     >>> from FlavorGraphTraverser.generation import QuestionGenerator
     >>>
-    >>> data = load_graph_data("data/graphs/coffee_flavor_wheel.pkl")
+    >>> data = load_graph_data("data/graphs/coffee_flavor_wheel.json")
     >>> graph = CoffeeDescriptionGraph(data['descriptions'], data['connections'], root=data['root'])
     >>>
     >>> generator = QuestionGenerator(graph)
