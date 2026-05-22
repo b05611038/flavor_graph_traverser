@@ -9,21 +9,29 @@ A Python library for representing and traversing coffee flavor hierarchies as di
 
 ---
 
+## Paper
+
+**Chang, Yu-Tang & Chen, Shih-Fang (2026).** Evaluating Tool-augmented Large Language Models on Hierarchical Flavor Reasoning: FlavorReasonBench and Its First Application to Coffee.
+
+> This paper is currently under review. No preprint is available. Citation information will be updated upon publication.
+
+**Data and reproducibility:**
+- Benchmark dataset: https://doi.org/10.5281/zenodo.20339333
+- Reproducibility data and code: https://doi.org/10.5281/zenodo.20338516
+
+---
+
 ## Research Overview
 
 ### Research Question
 
 For domain-specific hierarchical reasoning, how does tool-augmented inference compare to direct prompting?
 
-### Thesis
-
-Structured KB access (the SCAA Coffee Flavor Wheel) provides reliable benefit for taxonomy-grounded queries but offers no benefit — or introduces anchoring harm — for semantic similarity and complex path reasoning tasks where real-world descriptor ambiguity exceeds what the hierarchy encodes.
-
 ### Key Finding
 
-All 11 models scored **lower** with tool access than without (macro score Δ ranges from -0.02 to -0.14). Tool-augmented reasoning consistently anchors models on incomplete graph data, degrading performance across question types.
+Tool access **bifurcates** by task type: category-level traversal tasks (T1.3, T2.3) benefit significantly, while leaf-level tasks (T1.4, T1.5) are severely harmed. The mechanism is vocabulary coverage — the 111-node tool graph covers only a fraction of the 1,175-node question space, causing models to anchor on "not found" signals and abandon correct reasoning.
 
-See [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) for the full experimental design, and [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) for the design philosophy.
+See [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) for the full experimental design.
 
 ---
 
@@ -359,12 +367,17 @@ MIT License — see [LICENSE](LICENSE) file for details.
 
 ## Citation
 
+The paper is currently under review and has no DOI or preprint. Citation information will be added here upon publication.
+
+To cite the benchmark dataset:
+
 ```bibtex
-@software{flavor_graph_traverser_2026,
-  title = {FlavorGraphTraverser: Benchmarking Tool-Augmented LLM Inference on Hierarchical Reasoning},
-  author = {Zhang, Yutang},
-  year = {2026},
-  url = {https://github.com/b05611038/flavor_graph_traverser}
+@dataset{chang2026dataset,
+  title   = {FlavorReasonBench-Coffee: Benchmark Dataset},
+  author  = {Chang, Yu-Tang and Chen, Shih-Fang},
+  year    = {2026},
+  doi     = {10.5281/zenodo.20339333},
+  url     = {https://doi.org/10.5281/zenodo.20339333}
 }
 ```
 
@@ -372,9 +385,6 @@ MIT License — see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-Part of the IR-BERT Coffee Chat System project.
-
-**Related Work:**
-- Coffee flavor wheel taxonomy (Specialty Coffee Association)
-- Tool-augmented LLM research
-- Hierarchical reasoning benchmarks
+- Coffee flavor wheel taxonomy: Specialty Coffee Association (SCA)
+- Tool-augmented LLM research community
+- Hierarchical reasoning benchmark literature
