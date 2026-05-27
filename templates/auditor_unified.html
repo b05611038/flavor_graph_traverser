@@ -1393,7 +1393,9 @@
             const a = document.createElement('a');
             a.href = url;
             a.download = 'benchmark_dashboard.csv';
+            document.body.appendChild(a);
             a.click();
+            document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
 
