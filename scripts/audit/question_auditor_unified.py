@@ -930,7 +930,18 @@ def main():
     print(f"  Pending: {len(all_questions) - stats['total_reviewed']}")
     print()
 
-    # Load results if provided
+    # Auto-discover most recent results if none specified
+    if results_path is None:
+        candidates = sorted(
+            Path(project_root / "results").glob("*/results.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        if candidates:
+            results_path = str(candidates[0])
+            print(f"Auto-discovered results: {results_path}")
+
+    # Load results if available
     if results_path:
         try:
             load_results(results_path)
@@ -941,7 +952,7 @@ def main():
     print()
 
     print("=" * 70)
-    print("🔍 Unified Question Auditor")
+    print("Unified Question Auditor")
     print("=" * 70)
     print()
     print("Open in browser:")
@@ -954,8 +965,8 @@ def main():
     print("=" * 70)
     print()
 
-    # Run Flask app
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    # Run Flask app — bind to localhost only, debug off
+    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":

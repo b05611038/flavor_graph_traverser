@@ -1,5 +1,29 @@
 # Question Auditing
 
+## Results Viewer
+
+After running the benchmark, launch the auditor to explore model outputs:
+
+```bash
+python scripts/audit/question_auditor_unified.py
+# Opens at http://localhost:5000/results
+```
+
+The site auto-discovers the most recent run in `results/` — no path argument needed. To view a specific run:
+
+```bash
+python scripts/audit/question_auditor_unified.py --results results/experiment_20260513_142301/results.json
+```
+
+### What the Results tab shows
+
+- **Dashboard** — model × condition leaderboard table with macro/micro scores and per-task-type breakdown. Color-coded cells highlight high and low scores. CSV download available.
+- **Detail** — per-question results grouped by task type. Each row shows the score, model answer, and correctness. Click any row to open the full conversation: system prompt, user message, tool calls and responses, chain-of-thought trace, and final answer.
+
+The site reloads results automatically when the file changes on disk, so you can leave it open while a long benchmark run is in progress.
+
+---
+
 ## Quick Start
 
 ```bash
