@@ -114,13 +114,14 @@ open_source:
     enabled: true
 
 # Local testing model (vLLM)
+# Set enabled: true and point host at your vLLM server to use a local model.
 local:
   - id: openai/gpt-oss-20b
     name: GPT-OSS 20B
     provider: vLLM
     host: http://localhost:8000/v1
-    enabled: true
-    notes: For internal testing only, not for benchmark
+    enabled: false
+    notes: Example local model entry — replace id/host with your model
 
 # Judge models for F-category questions (multi-judge panel)
 # Using models NOT in the tested set to avoid self-judging bias.

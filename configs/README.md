@@ -335,7 +335,7 @@ runs:
 
 **Run**:
 ```bash
-python scripts/run_benchmark.py --run debug
+python scripts/experiment/run_experiment.py
 ```
 
 ### Example 2: Pilot Test with 2 Models
@@ -364,7 +364,7 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 
 **Run**:
 ```bash
-python scripts/run_benchmark.py --run pilot
+python scripts/experiment/run_experiment.py --client openrouter --max-questions 10
 ```
 
 **Expected cost**: ~$0.10-0.20
@@ -388,7 +388,7 @@ runs:
 
 **Run**:
 ```bash
-python scripts/run_benchmark.py --run full
+python scripts/experiment/run_experiment.py --client openrouter
 ```
 
 **Actual cost**: ~$60 for a 2-judge panel (see README for per-model cost estimates)

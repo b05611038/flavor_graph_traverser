@@ -26,6 +26,7 @@ from FlavorGraphTraverser.evaluation.question_auditor import (
 )
 
 from FlavorGraphTraverser.backup import backup_before_write
+from scripts.data.backup_manager import create_incremental_backup
 from FlavorGraphTraverser.evaluation.utils.answer_parser import compute_question_score
 
 # Get project root for template directory

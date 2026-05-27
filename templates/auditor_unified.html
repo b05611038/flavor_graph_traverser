@@ -1002,7 +1002,7 @@
             html += `
                 <div class="question-display">
                     <h3>📝 LLM View</h3>
-                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${q.llm_view}</pre>
+                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${escHtml(q.llm_view)}</pre>
                 </div>
             `;
 
@@ -1011,7 +1011,7 @@
                 html += `
                     <div class="annotated-view">
                         <h3>🔍 Annotated View (Internal Objects)</h3>
-                        <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 13px; margin: 0;">${q.annotated_view}</pre>
+                        <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 13px; margin: 0;">${escHtml(q.annotated_view)}</pre>
                     </div>
                 `;
             }
@@ -1534,7 +1534,7 @@
                 const scoreColor = r.score >= 0.8 ? '#16a34a' : r.score >= 0.5 ? '#d97706' : r.score > 0 ? '#dc2626' : '#d1d5db';
 
                 html += `
-                    <div class="result-row" onclick="openConvModal('${r.question_id}','${r.model}','${r.condition}')">
+                    <div class="result-row" onclick="openConvModal('${escHtml(r.question_id)}','${escHtml(r.model)}','${escHtml(r.condition)}')">
                         <span class="verdict" style="color:${vColor}">${verdict}</span>
                         <span class="qid">${r.question_id}</span>
                         <span><span class="badge badge-primary">${r.task_type || ''}</span></span>
@@ -1681,8 +1681,8 @@
             let html = '';
             for (const q of questions) {
                 const bodyContent = q.annotated_view
-                    ? `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px; margin: 0;">${q.annotated_view}</pre>`
-                    : `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px; margin: 0;">${q.llm_view || ''}</pre>`;
+                    ? `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px; margin: 0;">${escHtml(q.annotated_view)}</pre>`
+                    : `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px; margin: 0;">${escHtml(q.llm_view || '')}</pre>`;
 
                 const answerLine = (q.correct_answer !== null && q.correct_answer !== undefined)
                     ? `<div style="margin-top: 10px; font-size: 14px; color: #6b7280;"><strong>Answer:</strong> (${q.correct_answer}) ${q.correct_text || q.correct_answer}</div>`

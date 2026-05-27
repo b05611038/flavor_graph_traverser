@@ -74,13 +74,17 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Download the benchmark questions
+### 2. Set up the benchmark questions
 
-Download `benchmark_questions.json` from the dataset record:
+The benchmark questions are included in the repo at `data/dataset_release/benchmark_questions.json`. Copy them to the expected location:
+
+```bash
+cp data/dataset_release/benchmark_questions.json data/questions/benchmark_questions.json
+```
+
+Alternatively, download directly from the dataset record:
 
 > https://doi.org/10.5281/zenodo.20339333
-
-Place it at `data/questions/benchmark_questions.json`.
 
 ### 3. Option A — Cloud LLMs via OpenRouter
 
@@ -260,6 +264,8 @@ cp .env.example .env
 - `python-igraph>=0.10.0`
 - `requests>=2.25.0`
 - `pyyaml>=5.4.0`
+- `python-dotenv>=1.0.0`
+- `flask>=2.3.0` (audit web interface)
 
 ---
 
@@ -304,10 +310,11 @@ configs/                        # YAML configuration files
 ├── experiment.yaml             # Experiment configuration
 └── README.md                   # Configuration guide
 
-data/                           # Data files (private, excluded from git)
-├── graphs/                     # Graph files
+data/
+├── graphs/                     # Graph files (tracked: .json; excluded: .pkl)
+├── dataset_release/            # Public benchmark questions (tracked)
 ├── filtering/                  # Filtered nodes + exception lists
-└── questions/                  # Generated benchmark questions
+└── questions/                  # Runtime question files (excluded from git)
 
 scripts/                        # Executable scripts
 ├── experiment/

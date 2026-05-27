@@ -17,6 +17,10 @@ def load_graph_data(file_path: Union[str, Path]) -> Dict:
     """
     Load graph data from JSON or pickle file.
 
+    JSON is the preferred format. Pickle (.pkl) is supported for legacy files
+    only — never load a .pkl file from an untrusted source, as pickle
+    deserialization can execute arbitrary code.
+
     Args:
         file_path: Path to .json or .pkl file
 
@@ -79,19 +83,19 @@ def load_system_graph(
     if data_file is None:
         cwd = Path.cwd()
 
-        # Try pickle first (faster)
-        pkl_file = cwd / 'system_graph_data.pkl'
-        if pkl_file.exists():
-            data_file = pkl_file
+        # Try JSON first (preferred format)
+        json_file = cwd / 'system_graph_data.json'
+        if json_file.exists():
+            data_file = json_file
         else:
-            # Try JSON
-            json_file = cwd / 'system_graph_data.json'
-            if json_file.exists():
-                data_file = json_file
+            # Fall back to pickle
+            pkl_file = cwd / 'system_graph_data.pkl'
+            if pkl_file.exists():
+                data_file = pkl_file
             else:
                 raise FileNotFoundError(
                     "No SYSTEM graph data file found. "
-                    "Expected 'system_graph_data.pkl' or 'system_graph_data.json' "
+                    "Expected 'system_graph_data.json' or 'system_graph_data.pkl' "
                     "in current directory. Run 'python extract_system_graph.py' first."
                 )
 
