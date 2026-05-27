@@ -9,5 +9,3 @@ How to execute and reproduce the FlavorGraphTraverser benchmark.
 | [QUESTION_GENERATION.md](QUESTION_GENERATION.md) | Generate benchmark questions from the flavor graph |
 | [AUDITING.md](AUDITING.md) | Audit and review generated questions |
 | [TESTING.md](TESTING.md) | Run the test suite |
-| [RELEASING.md](RELEASING.md) | Release checklist and current status |
-| [COST.md](COST.md) | Token consumption and cost for the benchmark run |

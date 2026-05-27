@@ -59,6 +59,14 @@ results/*/
 
 # Paper writing workspace (FRI submission material — not for public repo)
 paper/
+Manuscript_FlavorReasonBench.pdf
+Descriptor_graph-LLMs-figures.pptx
+
+# Ad-hoc analysis and figure-generation scripts (results reproduced via Zenodo notebook)
+scripts/analyze_*.py
+scripts/generate_*.py
+scripts/apply_id_rename_to_tex.py
+scripts/_model_style.py
 
 # Citation PDFs and reference files (not for public repo)
 data/citations/

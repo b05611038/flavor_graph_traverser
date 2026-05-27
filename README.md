@@ -1,4 +1,6 @@
-# FlavorGraphTraverser
+<p align="center">
+  <img src="logo/wordmark.gif" alt="FlavorReasonBench-Coffee" width="560"/>
+</p>
 
 > Benchmarking Tool-Augmented LLM Inference on Coffee Flavor Hierarchy Reasoning
 
@@ -31,7 +33,33 @@ For domain-specific hierarchical reasoning, how does tool-augmented inference co
 
 Tool access **bifurcates** by task type: category-level traversal tasks (T1.3, T2.3) benefit significantly, while leaf-level tasks (T1.4, T1.5) are severely harmed. The mechanism is vocabulary coverage — the 111-node tool graph covers only a fraction of the 1,175-node question space, causing models to anchor on "not found" signals and abandon correct reasoning.
 
-See [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) for the full experimental design.
+### How it was built
+
+Two graphs are involved: a large benchmark graph (1,175 nodes) from which questions are drawn, and a smaller tool graph (111 nodes, the SCA Coffee Taster's Flavor Wheel) that the LLM can query. The gap between them is intentional — it places the model in the same position as a practitioner whose working vocabulary extends beyond any single codified standard. The 275 questions span 9 task types and were reviewed by a certified specialty coffee evaluator before release.
+
+For full methodology, design rationale, and findings, see the paper (citation will be updated upon publication).
+
+---
+
+## Leaderboard
+
+Macro score (0–100) averaged equally across 9 task types. Sorted by no-tool score.
+
+| Model | No-tool | Tool | Δ |
+|---|---:|---:|---:|
+| Gemini 3 Flash Preview | 64.8 | 59.6 | −5.2 |
+| GPT-OSS 120B | 64.3 | 52.0 | −12.3 |
+| Claude Sonnet 4.6 | 63.6 | 54.9 | −8.7 |
+| GPT-5.4 | 63.0 | 52.6 | −10.5 |
+| Kimi K2.5 | 62.4 | 57.0 | −5.3 |
+| Qwen3.5 397B | 60.5 | 53.3 | −7.2 |
+| Mistral Medium 3.1 | 59.8 | 45.6 | −14.2 |
+| Llama 4 Maverick | 59.3 | 51.9 | −7.4 |
+| Grok 4.1 Fast | 56.9 | 50.6 | −6.4 |
+| Nemotron 3 Super 120B | 56.5 | 54.5 | −2.0 |
+| DeepSeek V3.2 | 56.3 | 47.5 | −8.7 |
+
+Tool access produced a **negative Δ for all 11 models** at the aggregate level. For the task-level breakdown and interpretation of why this happens, see the paper (citation will be updated upon publication).
 
 ---
 
@@ -111,6 +139,17 @@ python scripts/experiment/run_experiment.py \
 ```
 
 The vLLM client uses the OpenAI-compatible `/v1/chat/completions` endpoint and requires no API key. Models must support function calling for the tool condition.
+
+### Estimated cost (OpenRouter)
+
+Running the full 275-question benchmark on a single model costs roughly **$0.25–$19** depending on the provider. Use `--max-questions 10` for a quick test before committing to a full run.
+
+| Model | Approx. cost (275 q) |
+|---|---|
+| GPT-OSS 120B | ~$0.24 |
+| Grok 4.1 Fast | ~$0.77 |
+| Gemini 3 Flash Preview | ~$3.66 |
+| Claude Sonnet 4.6 | ~$18.97 |
 
 ### Useful flags
 
@@ -422,14 +461,9 @@ See [docs/TESTING.md](docs/TESTING.md) for complete test documentation.
 
 | Document | Contents |
 |---|---|
-| [docs/BENCHMARK_DESIGN.md](docs/BENCHMARK_DESIGN.md) | Experimental design, conditions, scoring, tool interface |
 | [docs/QUESTION_GENERATION.md](docs/QUESTION_GENERATION.md) | Generation pipeline, leakage prevention, validation |
 | [docs/AUDITING.md](docs/AUDITING.md) | Audit workflow, results viewer, queue management |
 | [docs/TESTING.md](docs/TESTING.md) | Test suite, fixtures, CI |
-| [docs/RESEARCH_POSITION.md](docs/RESEARCH_POSITION.md) | Design philosophy, F-question rationale |
-| [docs/COST.md](docs/COST.md) | Completed experiment cost breakdown |
-| [docs/RELEASING.md](docs/RELEASING.md) | Release checklist (code, data, HF dataset) |
-| [scripts/analysis/README.md](scripts/analysis/README.md) | Analysis module: tables, figures, statistical tests, mechanistic analyses |
 | [configs/README.md](configs/README.md) | YAML configuration reference |
 | [prompts/](prompts/) | All prompt templates (one `.txt` file per prompt) |
 

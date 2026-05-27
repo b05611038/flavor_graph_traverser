@@ -129,7 +129,7 @@ common:
 | **no_tool** | ✗ | 0 | Baseline (no tool access) |
 | **tool** | ✓ | 5 | Tool-augmented |
 
-See `docs/BENCHMARK_DESIGN.md` for design rationale.
+See the paper for design rationale.
 
 #### System Prompt Design
 
@@ -391,7 +391,7 @@ runs:
 python scripts/run_benchmark.py --run full
 ```
 
-**Actual cost**: ~$60 for 2-judge panel (see docs/COST.md)
+**Actual cost**: ~$60 for a 2-judge panel (see README for per-model cost estimates)
 
 ---
 
@@ -479,6 +479,5 @@ export OPENROUTER_API_KEY="your_key"
 
 ## See Also
 
-- `docs/BENCHMARK_DESIGN.md` - Complete benchmark design and scoring
 - `docs/QUESTION_GENERATION.md` - Question generation pipeline
 - `FlavorGraphTraverser/evaluation/README.md` - Evaluation module documentation

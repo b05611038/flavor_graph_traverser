@@ -130,7 +130,7 @@ export OLLAMA_HOST="http://localhost:11434"  # optional override
 
 ## See Also
 
-- `docs/BENCHMARK_DESIGN.md` — Full benchmark design, scoring, and turn structure
+- See the paper for full benchmark design, scoring, and turn structure
 - `docs/AUDITING.md` — Audit workflow and results viewer
 - `configs/README.md` — Configuration guide
 - `prompts/` — All prompt templates
