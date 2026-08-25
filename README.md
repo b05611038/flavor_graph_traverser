@@ -13,7 +13,7 @@ A Python library for representing and traversing coffee flavor hierarchies as di
 
 ## Paper
 
-**Chang, Yu-Tang & Chen, Shih-Fang (2026).** Evaluating Tool-augmented Large Language Models on Hierarchical Flavor Reasoning: FlavorReasonBench and Its First Application to Coffee.
+**Chang, Yu-Tang & Chen, Shih-Fang (2026).** FlavorReasonBench for Evaluating Tool-augmented Large Language Models on Hierarchical Flavor Reasoning in Coffee.
 
 > This paper is currently under review. No preprint is available. Citation information will be updated upon publication.
 

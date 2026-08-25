@@ -3,9 +3,8 @@ FlavorReasonBench-Coffee
 
 A benchmark for evaluating LLM reasoning over professional coffee flavor hierarchies.
 
-Chang, Yu-Tang & Chen, Shih-Fang (2026). Evaluating Tool-augmented Large Language
-Models on Hierarchical Flavor Reasoning: FlavorReasonBench and Its First Application
-to Coffee.
+Chang, Yu-Tang & Chen, Shih-Fang (2026). FlavorReasonBench for Evaluating
+Tool-augmented Large Language Models on Hierarchical Flavor Reasoning in Coffee.
 
 
 Files
@@ -105,9 +104,9 @@ Citation
 --------
 If you use FlavorReasonBench-Coffee, please cite:
 
-  Chang, Yu-Tang & Chen, Shih-Fang (2026). Evaluating Tool-augmented Large
-  Language Models on Hierarchical Flavor Reasoning: FlavorReasonBench and Its
-  First Application to Coffee.
+  Chang, Yu-Tang & Chen, Shih-Fang (2026). FlavorReasonBench for Evaluating
+  Tool-augmented Large Language Models on Hierarchical Flavor Reasoning in
+  Coffee.
 
 
 License
