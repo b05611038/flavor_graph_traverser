@@ -118,6 +118,9 @@ class OpenRouterClient(BaseClient):
             "include_reasoning": True,  # Surface reasoning tokens in message.reasoning
             **kwargs
         }
+        if temperature is None:
+            # Models that reject sampling parameters (e.g. some judges): send none.
+            payload.pop("temperature")
 
         # Add tools if provided
         if tools:
@@ -236,6 +239,7 @@ class OpenRouterClient(BaseClient):
         finish_reason = None
         usage = None
         resolved_model = None  # Actual versioned model ID from API response
+        provider = None  # Serving provider (OpenRouter reports it per response)
 
         for line in response.iter_lines():
             if not line:
@@ -260,6 +264,8 @@ class OpenRouterClient(BaseClient):
             # Capture resolved model ID from first chunk that has it
             if resolved_model is None and chunk.get("model"):
                 resolved_model = chunk["model"]
+            if provider is None and chunk.get("provider"):
+                provider = chunk["provider"]
 
             # Usage arrives in the final chunk when stream_options.include_usage=True
             if chunk.get("usage"):
@@ -346,6 +352,7 @@ class OpenRouterClient(BaseClient):
             },
             thinking_content=thinking_content,
             resolved_model=resolved_model,
+            provider=provider,
         )
 
     def supports_function_calling(self) -> bool:

@@ -31,14 +31,20 @@ closed_source:
     reasoning: true
     enabled: true
 
-  - id: x-ai/grok-4.1-fast
-    name: Grok 4.1 Fast
+  # Replaces x-ai/grok-4.1-fast (used in the April 2026 run), which OpenRouter
+  # has since removed (checked 2026-11-19). grok-4.20 is the
+  # closest release (OpenRouter listing 2026-04-01, versioned id
+  # x-ai/grok-4.20-20260309), i.e. already available during the original run.
+  # Note: 4.1 Fast was xAI's low-cost tier; 4.20 has no "fast" variant.
+  - id: x-ai/grok-4.20
+    name: Grok 4.20
     provider: xAI
     pricing:
-      input: 0.20
-      output: 0.50
+      input: 1.25
+      output: 2.50
     reasoning: true
     enabled: true
+    replaces: x-ai/grok-4.1-fast
 
 # Open-source models (7 models)
 open_source:
@@ -92,15 +98,24 @@ open_source:
     reasoning: true
     enabled: true
 
-  - id: mistralai/mistral-medium-3.1
-    name: Mistral Medium 3.1
+  # Mistral Medium 3.1 (mistral-medium-2508) was deprecated by Mistral on
+  # 2026-05-22 and retired on 2026-08-31; OpenRouter still lists it but every request
+  # fails ("Invalid model: mistral-medium-2508", checked 2026-11-20). Mistral designates
+  # Medium 3.5 as its replacement (docs.mistral.ai/getting-started/models; HF card
+  # "replaces its predecessor Mistral Medium 3.1"). Medium 3.5 has open weights (128B
+  # dense, modified MIT); with default settings it does not reason (0 reasoning tokens,
+  # checked 2026-11-20), like 3.1. Medium 3.5 itself retires 2027-04-30.
+  # April prices of the replaced model (for costing old results): 0.40 / 2.00.
+  - id: mistralai/mistral-medium-3-5
+    name: Mistral Medium 3.5
     provider: Mistral
     region: EU
     pricing:
-      input: 0.40
-      output: 2.00
-    reasoning: false
+      input: 1.50
+      output: 7.50
+    reasoning: false   # default (no reasoning parameter sent)
     enabled: true
+    replaces: mistralai/mistral-medium-3.1
 
   - id: nvidia/nemotron-3-super-120b-a12b
     name: Nemotron 3 Super 120B
@@ -125,7 +140,7 @@ local:
 
 # Judge models for F-category questions (multi-judge panel)
 # Using models NOT in the tested set to avoid self-judging bias.
-# Final judge selection will be decided after reviewing evaluation results.
+# Judges with `enabled: true` form the panel.
 judges:
   - id: anthropic/claude-opus-4.6
     name: Claude Opus 4.6
@@ -153,3 +168,23 @@ judges:
       input: 2.0
       output: 12.0
     enabled: true
+
+# Judge panel for the follow-up runs.
+# Main model line of each provider, no Pro tier. All three judge every T3 answer
+# (scripts/revision/run_judges.py). The `judges` list above is the April panel, kept as a record.
+revision_judges:
+  - id: anthropic/claude-opus-5.5
+    name: Claude Opus 5.5
+    provider: anthropic
+    temperature: null   # not supported by the model (OpenRouter supported_parameters); not sent
+    pricing: {input: 4.0, output: 20.0}
+  - id: google/gemini-4-argon
+    name: Gemini 4 Argon
+    provider: google
+    temperature: 0.0    # as in April
+    pricing: {input: 2.0, output: 10.0}
+  - id: openai/gpt-6.2-sol
+    name: GPT-6.2 Sol
+    provider: openai
+    temperature: null   # not supported by the model (OpenRouter supported_parameters); not sent
+    pricing: {input: 2.0, output: 10.0}

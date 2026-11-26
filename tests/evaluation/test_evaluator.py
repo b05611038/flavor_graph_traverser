@@ -170,6 +170,24 @@ class TestDirectEvaluation:
         assert len(result.errors) > 0
 
 
+class TestApiErrorStatusAllQuestionTypes:
+    """An API failure must give status api_error for multi-select and T3 questions too,
+    so the cache retries them (it used to be recorded as parse_error / no_judge)."""
+
+    def test_multiselect_api_error(self, mock_client, mock_executor, mock_config):
+        q = {"id": "A1_x", "text": "Pick all.", "options": {"A": "a", "B": "b"}, "correct_answer": ["A"]}
+        mock_client.query.side_effect = Exception("402 Client Error: Payment Required")
+        res = QuestionEvaluator(mock_client, mock_executor, "no_tool", config=mock_config).evaluate(q)
+        assert res.status == "api_error"
+        assert res.is_correct is False
+
+    def test_f_category_api_error_without_judge(self, mock_client, mock_executor, mock_config):
+        q = {"id": "F_x", "text": "Explain.", "category": "F", "evaluation": {"method": "llm_judge"}}
+        mock_client.query.side_effect = Exception("402 Client Error: Payment Required")
+        res = QuestionEvaluator(mock_client, mock_executor, "no_tool", config=mock_config).evaluate(q)
+        assert res.status == "api_error"
+
+
 class TestToolEvaluation:
     """Test tool-augmented evaluation (tool condition)."""
 
@@ -355,6 +373,14 @@ class TestToolEvaluation:
         assert result.status == "tool_error"
         assert len(result.errors) > 0
         assert result.errors[0]["type"] == "tool_error"
+
+    def test_tool_error_scored_on_final_answer(self):
+        """A malformed tool call does not zero a correct final answer."""
+        from FlavorGraphTraverser.evaluation.utils.answer_parser import compute_question_score
+        assert compute_question_score("A", "A", True, status="tool_error") == 1.0
+        assert compute_question_score("B", "A", False, status="tool_error") == 0.0
+        assert compute_question_score(None, ["A", "B"], False, status="tool_error") == 0.0
+        assert compute_question_score(["A"], ["A", "B"], False, status="tool_error") > 0
 
     def test_tool_no_answer_no_tools(self, mock_client, mock_executor, sample_question, mock_config):
         """Test tool conditionwhen model gives neither answer nor tool calls."""

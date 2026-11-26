@@ -60,7 +60,7 @@ logs/
 results/cache/
 results/*/
 
-# Paper writing workspace (FRI submission material — not for public repo)
+# Paper writing workspace (not for public repo)
 paper/
 Manuscript_FlavorReasonBench.pdf
 Descriptor_graph-LLMs-figures.pptx
@@ -78,3 +78,15 @@ data/resolved_models.json
 
 # Experiment outputs
 results/
+
+# Follow-up experiment runs (kept apart from the original results/)
+results_revision/
+
+# Study data (benchmark questions, flavor wheel, answer subgraph): distributed via
+# the data deposit, never committed
+data/dataset_release/
+data/graphs/coffee_flavor_wheel.json
+data/graphs/answer_subgraph.json
+
+# Reproduction notebook and README from the data package (Zenodo), unpacked at the repo root
+reproduce/

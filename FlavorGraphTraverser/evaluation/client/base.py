@@ -51,6 +51,7 @@ class LLMResponse:
     raw_response: Optional[Dict[str, Any]] = None
     thinking_content: Optional[str] = None
     resolved_model: Optional[str] = None  # Actual versioned model ID returned by the API
+    provider: Optional[str] = None  # Serving provider reported by the router (OpenRouter), if any
 
 
 class BaseClient(ABC):

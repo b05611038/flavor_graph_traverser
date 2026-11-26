@@ -1,5 +1,6 @@
 # Experimental Conditions Configuration
-# Defines the 2 conditions (no_tool, tool) for the benchmark
+# Defines the original conditions (no_tool, tool) and the follow-up conditions
+# (tool_rerun, tool_resolved, prompt_only, prompt_only_noaccess, graph_in_context).
 #
 # Research goal: characterize when structured KB access (SCAA wheel) helps vs.
 # interferes with LLM reasoning on real-world flavor descriptors that may not
@@ -28,7 +29,7 @@ conditions:
     # anchoring it to the SCAA flavor wheel taxonomy in advance.
     system_prompt: ""
 
-  tool:
+  tool: &tool_condition
     name: "Tool-Augmented"
     description: "Tool-augmented with graph traversal tools"
     tools_enabled: true
@@ -44,10 +45,104 @@ conditions:
     # - Per-type strategies (v5-v7) and explicit "skip tools" rules (v7) backfired
     # - "answer from your own knowledge" (v1) over-hinted skipping tools on F
     # - Bare "absence ≠ invalid" (v2) caused model to treat absence as negative
-    system_prompt: |
+    label_resolution: exact   # original behaviour: exact, case-sensitive node-name match
+    system_prompt: &tool_system_prompt |
       You have access to a coffee flavor graph database via the provided tools.
       The graph covers ~111 standard SCAA wheel nodes (e.g., 'rose', 'berry', 'fruity', 'winey'). Real-world flavor descriptors often do not appear verbatim — a descriptor absent from the graph may still relate to SCAA categories you already know. Combine graph evidence with your own coffee flavor knowledge.
       Only treat confirmed get_parent results as positive evidence. If an answer option is not found as a complete entry (e.g. 'blueberry jam' not found), its component words alone do NOT reliably represent the full descriptor — do not infer its category from partial matches.
+
+  # ── Follow-up conditions ──────────────────────────────────────────────────
+  # Conditions marked `draft: true` have prompt wording that is not final.
+  # run_experiment.py refuses to run them without --allow-draft, so placeholder
+  # text can never end up in a reported result.
+
+  tool_rerun:
+    # Exact copy of `tool` under a separate name (same fingerprint), for runs 2-3 of the
+    # tool scenario (run-to-run variation) and the same-session controls of the label-fix rerun.
+    # A distinct name keeps re-runs from replacing the original April `tool` records
+    # when results are merged.
+    <<: *tool_condition
+    name: "Tool-Augmented (re-run)"
+    description: "Identical to tool; used for revision re-runs"
+
+  tool_resolved:
+    # Identical to `tool` (same prompt, tools, budget) except
+    # that tool lookups go through LabelResolver (tools/label_resolver.py): bare layered
+    # labels ("floral" -> "floral (inner layer)"), benchmark spellings ("green/vegetable",
+    # "whisky"), tool-graph misspellings ("grapefruit"), separators (space/_/-// alike or
+    # missing), ring names without parentheses, clear typos and word forms ("fruit" ->
+    # "fruity", singular/plural). Responses report the mapping ("resolved" /
+    # "resolved_to") and show corrected spellings.
+    name: "Tool-Augmented (label-resolved)"
+    description: "Tool condition with bare-label / spelling resolution in the tool executor"
+    tools_enabled: true
+    max_reasoning_calls: 5
+    max_validate_repeats: 3
+    label_resolution: resolve
+    system_prompt: *tool_system_prompt
+
+  prompt_only:
+    # Prompt-only, LITERAL version: the tool condition's system prompt verbatim, no
+    # tools (budget notice omitted: it describes absent tools). PILOT ONLY: in the pilot
+    # 25% of responses stopped after writing a tool call and many more acted out tool calls.
+    # Not run in full; kept as draft so the pilot is reproducible. The prompt-only
+    # condition used for the full runs is prompt_only_noaccess.
+    name: "Prompt-Only Control"
+    description: "Tool-condition system prompt without tool access"
+    draft: true
+    tools_enabled: false
+    max_reasoning_calls: 0
+    system_prompt: *tool_system_prompt
+
+  prompt_only_noaccess:
+    # Fallback for prompt_only, used because of the pilot result above: the tool system
+    # prompt with its FIRST SENTENCE removed
+    # ("You have access to a coffee flavor graph database via the provided tools."), so the
+    # model is not told about tools it does not have. Every other sentence is verbatim,
+    # including the one under test ("Only treat confirmed get_parent results as positive
+    # evidence ..."). The prompt-only condition used for the full runs;
+    # run on T1 (A1-A5) only, 3 runs.
+    name: "Prompt-Only Control (no access claim)"
+    description: "Tool-condition system prompt minus the tool-access sentence, without tool access"
+    tools_enabled: false
+    max_reasoning_calls: 0
+    system_prompt: |
+      The graph covers ~111 standard SCAA wheel nodes (e.g., 'rose', 'berry', 'fruity', 'winey'). Real-world flavor descriptors often do not appear verbatim — a descriptor absent from the graph may still relate to SCAA categories you already know. Combine graph evidence with your own coffee flavor knowledge.
+      Only treat confirmed get_parent results as positive evidence. If an answer option is not found as a complete entry (e.g. 'blueberry jam' not found), its component words alone do NOT reliably represent the full descriptor — do not infer its category from partial matches.
+
+  graph_in_context:
+    # The whole tool graph in the system prompt, no tools.
+    # Primary comparison: tool_resolved (same node names and name mappings, guidance
+    # translated sentence by sentence) — the two differ in how the graph is accessed
+    # (tool calls with a budget vs. read in full) and the instructions tied to it.
+    # Format: nested JSON, the encoding the graph tools return their results in, so the
+    # way graph content is written is held constant across tool and in-context conditions.
+    # The guidance is the tool prompt translated sentence by sentence from tool results to
+    # the listed graph; {tool_graph} is replaced with the rendered graph.
+    # A pilot run showed no answer-format problems.
+    name: "Graph-in-Context"
+    description: "Full tool graph supplied in the system prompt as nested JSON, no tool access"
+    tools_enabled: false
+    max_reasoning_calls: 0
+    graph_in_context: true
+    graph_render_format: json
+    # corrected = show "grapefruit"/"maple syrup"/"black tea" instead of the tool-graph
+    # file's "graphfruit"/"mapple syrup"/"black_tea" (as in tool_resolved outputs).
+    graph_names: corrected
+    # resolver = list the name mappings LabelResolver applies in tool_resolved (bare layer
+    # labels such as "floral", the benchmark spelling "green/vegetable"), generated from the
+    # resolver's own table into {name_aliases}, so both access modes get the same name help.
+    graph_aliases: resolver
+    system_prompt: |
+      Below is a coffee flavor graph: the standard SCAA Coffee Taster's Flavor Wheel, as a JSON object. Each key is a node, and its value is an object containing that node's children ({} if it has none).
+
+      {tool_graph}
+
+      Some descriptors may be written differently from the graph's node names. Each key below is such a name, and its value is the graph node it refers to:
+      {name_aliases}
+
+      The graph covers ~111 standard SCAA wheel nodes (e.g., 'rose', 'berry', 'fruity', 'winey'). Real-world flavor descriptors often do not appear verbatim — a descriptor absent from the graph may still relate to SCAA categories you already know. Combine graph evidence with your own coffee flavor knowledge.
+      Only treat parent–child relationships shown in the graph as positive evidence. If an answer option does not appear in the graph as a complete entry (e.g. 'blueberry jam' does not appear), its component words alone do NOT reliably represent the full descriptor — do not infer its category from partial matches.
 
 # Common settings across all conditions
 common:

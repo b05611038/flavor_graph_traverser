@@ -8,6 +8,12 @@ Wraps existing graph methods and provides the tool interface.
 from typing import List, Dict, Any, Optional
 from ...graph import CoffeeDescriptionGraph
 from .definitions import TOOL_VALIDATE, TOOL_GET_PARENT, TOOL_GET_CHILDREN
+from .label_resolver import LabelResolver
+
+NOT_FOUND_MSG = (
+    "Descriptor '{descriptor}' not found in graph. The graph stores short descriptors — "
+    "if this is a multi-word phrase, try each component word separately with validate_descriptors."
+)
 
 
 class GraphToolExecutor:
@@ -33,14 +39,32 @@ class GraphToolExecutor:
         >>> {'descriptor': 'blueberry', 'parents': ['berry'], 'error': None}
     """
 
-    def __init__(self, graph: CoffeeDescriptionGraph):
+    def __init__(self, graph: CoffeeDescriptionGraph, resolver: Optional[LabelResolver] = None):
         """
         Initialize the executor.
 
         Args:
             graph: CoffeeDescriptionGraph instance to query
+            resolver: Optional LabelResolver. None (default) = exact string match,
+                the behaviour of the original experiment. With a resolver, bare
+                layered labels ("floral"), benchmark spellings ("green/vegetable")
+                and case/underscore variants resolve to canonical node names, and
+                each response reports the canonical name it resolved to.
         """
         self.graph = graph
+        self.resolver = resolver
+
+    def _display(self, node: str) -> str:
+        """Name shown to the model (resolver corrects tool-graph misspellings)."""
+        return self.resolver.display(node) if self.resolver is not None else node
+
+    def _resolve(self, descriptor: Any) -> Optional[str]:
+        """Canonical node name for descriptor, or None if absent."""
+        if self.resolver is not None:
+            return self.resolver.resolve(descriptor)
+        if isinstance(descriptor, str) and descriptor in self.graph.descriptions:
+            return descriptor
+        return None
 
     def execute(
         self,
@@ -91,12 +115,15 @@ class GraphToolExecutor:
 
         valid = []
         invalid = []
-
-        all_descriptors = self.graph.descriptions
+        resolved = {}
 
         for descriptor in descriptors:
-            if descriptor and isinstance(descriptor, str) and descriptor in all_descriptors:
+            canonical = self._resolve(descriptor) if descriptor else None
+            if canonical is not None:
                 valid.append(descriptor)
+                shown = self._display(canonical)
+                if shown != descriptor:
+                    resolved[descriptor] = shown
             else:
                 invalid.append(descriptor)
 
@@ -104,6 +131,9 @@ class GraphToolExecutor:
             "valid": valid,
             "invalid": invalid
         }
+        if resolved:
+            # Only possible with a resolver: tell the model the node name to use.
+            result["resolved"] = resolved
         if truncated:
             result["warning"] = "Input truncated to first 10 descriptors"
         return result
@@ -127,21 +157,25 @@ class GraphToolExecutor:
             >>> executor.get_parent('unknown')
             {'descriptor': 'unknown', 'parents': None, 'error': 'Descriptor not found in graph'}
         """
-        # Check if descriptor exists
-        if descriptor not in self.graph.descriptions:
+        canonical = self._resolve(descriptor)
+        if canonical is None:
             return {
                 "descriptor": descriptor,
                 "parents": None,
-                "error": f"Descriptor '{descriptor}' not found in graph. The graph stores short descriptors — if this is a multi-word phrase, try each component word separately with validate_descriptors."
+                "error": NOT_FOUND_MSG.format(descriptor=descriptor)
             }
 
         try:
-            parents = self.graph.parents_of_description(descriptor)
-            return {
+            parents = self.graph.parents_of_description(canonical)
+            result = {
                 "descriptor": descriptor,
-                "parents": parents,
+                "parents": [self._display(n) for n in parents] if self.resolver is not None else parents,
                 "error": None
             }
+            shown = self._display(canonical)
+            if shown != descriptor:
+                result["resolved_to"] = shown
+            return result
         except Exception as e:
             return {
                 "descriptor": descriptor,
@@ -168,21 +202,25 @@ class GraphToolExecutor:
             >>> executor.get_children('unknown')
             {'descriptor': 'unknown', 'children': None, 'error': 'Descriptor not found in graph'}
         """
-        # Check if descriptor exists
-        if descriptor not in self.graph.descriptions:
+        canonical = self._resolve(descriptor)
+        if canonical is None:
             return {
                 "descriptor": descriptor,
                 "children": None,
-                "error": f"Descriptor '{descriptor}' not found in graph. The graph stores short descriptors — if this is a multi-word phrase, try each component word separately with validate_descriptors."
+                "error": NOT_FOUND_MSG.format(descriptor=descriptor)
             }
 
         try:
-            children = self.graph.children_of_description(descriptor)
-            return {
+            children = self.graph.children_of_description(canonical)
+            result = {
                 "descriptor": descriptor,
-                "children": children,
+                "children": [self._display(n) for n in children] if self.resolver is not None else children,
                 "error": None
             }
+            shown = self._display(canonical)
+            if shown != descriptor:
+                result["resolved_to"] = shown
+            return result
         except Exception as e:
             return {
                 "descriptor": descriptor,
@@ -200,4 +238,4 @@ class GraphToolExecutor:
         Returns:
             True if descriptor exists in graph
         """
-        return descriptor in self.graph.descriptions
+        return self._resolve(descriptor) is not None

@@ -405,6 +405,10 @@ def compute_question_score(
     - Multi-select (A1, A4, A5): F1 between predicted and correct sets
     - F-category: judge_score / 5 (continuous 0–1)
     - parse_error / api_error: 0
+    - tool_error (a malformed tool call; the error was returned to the model, which went
+      on to answer): scored on the final answer like any other evaluation. If the model
+      gave no answer the answer-based rules below already give 0. (Earlier versions
+      scored tool_error 0; no April evaluation changes, all 3 were wrong.)
 
     Args:
         model_answer: Model's answer (str, list, or None)
@@ -429,7 +433,7 @@ def compute_question_score(
         return judge_score / 5.0
 
     # Error states get 0
-    if status in ("parse_error", "api_error", "tool_error", "no_judge", "judge_parse_error"):
+    if status in ("parse_error", "api_error", "no_judge", "judge_parse_error"):
         return 0.0
 
     # Multi-select: F1 score

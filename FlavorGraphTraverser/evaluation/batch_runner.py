@@ -39,7 +39,11 @@ from collections import defaultdict
 from ..graph import CoffeeDescriptionGraph
 from .. import load_graph_data
 from .client import create_client
-from .tools import GraphToolExecutor
+from .tools import GraphToolExecutor, build_executor
+from .utils import load_conditions_config, condition_fingerprint
+
+# Cached results with these statuses are re-evaluated rather than reused
+RETRY_STATUSES = ("api_error",)
 from .evaluator import QuestionEvaluator, EvaluationResult
 from .utils.answer_parser import AnswerParseResult, MultiSelectParseResult, compute_question_score
 
@@ -87,7 +91,9 @@ class BatchRunner:
         output_dir: str = "results",
         cache_dir: Optional[str] = None,
         enable_cache: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
+        merged_path: Optional[str] = "results/merged_results.json",
+        run_tag: Optional[str] = None,
     ):
         """
         Initialize batch runner.
@@ -99,6 +105,12 @@ class BatchRunner:
             cache_dir: Directory for cached results (default: {output_dir}/cache)
             enable_cache: Whether to use caching
             verbose: Whether to print progress
+            merged_path: Consolidated results file refreshed after every save. It merges
+                <dir of merged_path>/*/results.json and */*/results.json, last writer
+                wins per (question_id, model, condition). None disables auto-merge.
+                Revision runs must use their own root (e.g. results_revision/
+                merged_results.json) so they never overwrite the original run.
+            run_tag: Optional label stamped into each new result's run_meta["run_tag"].
         """
         self.config = BatchConfig(
             questions_file=questions_file,
@@ -108,6 +120,9 @@ class BatchRunner:
             enable_cache=enable_cache,
             verbose=verbose
         )
+
+        self.merged_path = merged_path
+        self.run_tag = run_tag
 
         # Load graph
         if self.config.verbose:
@@ -164,6 +179,8 @@ class BatchRunner:
         judge_base_url: Optional[str] = None,
         judge_api_key: Optional[str] = None,
         tool_modes: Optional[Dict[str, str]] = None,
+        only_pairs: Optional[Dict[tuple, set]] = None,
+        allow_draft: bool = False,
     ) -> Dict[str, Any]:
         """
         Run batch evaluation.
@@ -182,6 +199,11 @@ class BatchRunner:
                         "icl" uses text-based tool simulation for models without
                         native function calling support. Defaults to "native" for
                         any model not listed.
+            only_pairs: Optional selective re-run filter, {(model, condition): {question_id, ...}}.
+                        When given, only the listed questions are evaluated for each
+                        (model, condition); pairs absent from the dict are skipped entirely.
+            allow_draft: Permit conditions marked `draft: true` in conditions.yaml.
+                         Their results are stamped run_meta["draft"] = True.
 
         Returns:
             Dict with results and summary statistics
@@ -197,6 +219,17 @@ class BatchRunner:
             ... )
         """
         start_time = time.time()
+
+        conditions_config = load_conditions_config()
+        unknown = [c for c in conditions if c not in conditions_config["conditions"]]
+        if unknown:
+            raise ValueError(f"Unknown condition(s) {unknown}")
+        drafts = [c for c in conditions if conditions_config["conditions"][c].get("draft")]
+        if drafts and not allow_draft:
+            raise ValueError(
+                f"Condition(s) {drafts} are marked draft (prompt wording not final); "
+                f"pass allow_draft=True for test runs only"
+            )
 
         # Build judge client (shared across all models/conditions)
         judge_client = None
@@ -219,7 +252,11 @@ class BatchRunner:
                     print(f"⚠ Failed to create judge client: {e}. F-category questions will not be judged.")
 
         # Calculate total evaluations
-        total = len(self.questions) * len(models) * len(conditions)
+        if only_pairs is None:
+            total = len(self.questions) * len(models) * len(conditions)
+        else:
+            known = {q.get("id") for q in self.questions}
+            total = sum(len(only_pairs.get((m, c), set()) & known) for m in models for c in conditions)
 
         if self.config.verbose:
             print(f"\n{'='*70}")
@@ -262,18 +299,33 @@ class BatchRunner:
                 # Determine tool mode for this model
                 tool_mode = (tool_modes or {}).get(model, "native")
 
+                # Executor honours the condition's label_resolution setting
+                condition_config = conditions_config["conditions"][condition]
+                executor = build_executor(self.graph, condition_config)
+
                 # Create evaluator (with optional judge for F-category)
                 evaluator = QuestionEvaluator(
-                    client, self.executor, condition,
+                    client, executor, condition,
+                    config=conditions_config,
                     judge_client=judge_client,
                     tool_mode=tool_mode,
                 )
+                # Same fingerprint as stamped on new results (config + rendered content)
+                fingerprint = evaluator.run_meta["condition_fingerprint"]
+
+                selected = None if only_pairs is None else only_pairs.get((model, condition), set())
+                if selected is not None and not selected:
+                    if self.config.verbose:
+                        print("    (no questions selected for this model × condition)")
+                    continue
 
                 for i, question in enumerate(self.questions, 1):
                     question_id = question.get("id", f"Q{i}")
+                    if selected is not None and question_id not in selected:
+                        continue
 
                     # Check cache
-                    if self._is_cached(model, condition, question_id):
+                    if self._is_cached(model, condition, question_id, fingerprint):
                         if self.config.verbose:
                             print(f"    [{i}/{len(self.questions)}] {question_id}: (cached)")
                         completed += 1
@@ -289,6 +341,8 @@ class BatchRunner:
 
                     try:
                         result = evaluator.evaluate(question)
+                        if self.run_tag:
+                            result.run_meta = dict(result.run_meta or {}, run_tag=self.run_tag)
 
                         # Save to cache
                         if self.config.enable_cache:
@@ -365,13 +419,41 @@ class BatchRunner:
             print(f"  Sampled {len(self.questions)} questions "
                   f"({n_per_type} per task type, {len(buckets)} types)")
 
-    def _is_cached(self, model: str, condition: str, question_id: str) -> bool:
-        """Check if result is cached."""
+    def _is_cached(self, model: str, condition: str, question_id: str,
+                   fingerprint: Optional[str] = None) -> bool:
+        """Check if a usable cached result exists.
+
+        A cached result stamped with a different condition fingerprint (the
+        condition's prompt/tools/settings changed since it was produced, e.g. a
+        draft prompt was finalized) is NOT reused. Legacy results without
+        run_meta are accepted, as before.
+        """
         if not self.config.enable_cache:
             return False
 
         cache_key = f"{model}/{condition}/{question_id}"
-        return cache_key in self.results_cache
+        cached = self.results_cache.get(cache_key)
+        if cached is None:
+            return False
+        # Transient failures (API errors, e.g. credit exhausted or a dropped connection)
+        # are retried on the next run instead of being reused.
+        status = cached.get("status") if isinstance(cached, dict) else getattr(cached, "status", None)
+        if status in RETRY_STATUSES:
+            return False
+        # Results written before the multi-select / T3 status fix carry an API error in
+        # `errors` under another status (parse_error, success, no_judge): retry them too.
+        errs = cached.get("errors") if isinstance(cached, dict) else getattr(cached, "errors", None)
+        if any((e or {}).get("type") == "api_error" for e in (errs or [])):
+            return False
+        if fingerprint is not None:
+            meta = cached.get("run_meta") if isinstance(cached, dict) else getattr(cached, "run_meta", None)
+            cached_fp = (meta or {}).get("condition_fingerprint")
+            if cached_fp is not None and cached_fp != fingerprint:
+                if self.config.verbose:
+                    print(f"    (stale cache for {cache_key}: condition changed "
+                          f"{cached_fp} → {fingerprint}; re-evaluating)")
+                return False
+        return True
 
     def _get_cached_result(self, model: str, condition: str, question_id: str) -> Optional[EvaluationResult]:
         """Get cached result."""
@@ -405,6 +487,8 @@ class BatchRunner:
                 model_response_text=cached_data.get("model_response_text"),
                 judge_score=cached_data.get("judge_score"),
                 judge_result=cached_data.get("judge_result"),
+                resolved_model=cached_data.get("resolved_model"),
+                run_meta=cached_data.get("run_meta"),
                 # Always recompute score from source fields — stale cached scores
                 # from older runs would otherwise pollute aggregates.
                 score=compute_question_score(
@@ -673,15 +757,18 @@ class BatchRunner:
         if self.config.verbose and run_status == "complete":
             print(f"✓ Results saved to: {results_file}")
 
-        # Keep the global merged file current so the auditor always shows
+        # Keep the merged file current so the auditor always shows
         # all experiments at once (not just the one currently running).
-        self._update_merged_results()
+        if self.merged_path:
+            merge_results_tree(self.merged_path)
 
-    def _update_merged_results(self, merged_path: str = "results/merged_results.json"):
+    @staticmethod
+    def _update_merged_results(merged_path: str = "results/merged_results.json"):
         """
-        Re-merge all results/*/results.json files into a single consolidated
-        file at `merged_path`.  Called after every incremental save so the
-        auditor site auto-reloads with the latest data.
+        Re-merge all <root>/*/results.json and <root>/*/*/results.json files
+        (root = directory of `merged_path`) into a single consolidated file at
+        `merged_path`.  Called after every incremental save so the auditor site
+        auto-reloads with the latest data.
 
         Deduplicates on (question_id, model, condition) — last writer wins,
         which is fine because each experiment writes identical data for its
@@ -689,9 +776,10 @@ class BatchRunner:
         """
         import glob as _glob
 
+        root = Path(merged_path).parent.as_posix()
         patterns = [
-            "results/*/results.json",
-            "results/*/*/results.json",
+            f"{root}/*/results.json",
+            f"{root}/*/*/results.json",
         ]
         files: list[str] = []
         for pat in patterns:
@@ -738,3 +826,8 @@ class BatchRunner:
             except OSError:
                 pass
             raise
+
+
+def merge_results_tree(merged_path: str = "results/merged_results.json") -> None:
+    """Merge <dir of merged_path>/*/results.json and */*/results.json into merged_path."""
+    BatchRunner._update_merged_results(merged_path)

@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import os
+import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -288,6 +289,20 @@ def rebuild_merged(run_dir: Path, dry_run: bool = False):
         },
         "results": all_results,
     }
+
+    # The original run lives under results/; follow-up runs live under their own
+    # root (e.g. results_revision/) and must never overwrite the original merged file.
+    try:
+        rel = run_dir.resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        raise SystemExit(f"--run {run_dir} must be inside the repository (run from the repo root)")
+    root = Path(rel.parts[0])
+    if root.name != "results":
+        if not dry_run:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+            from FlavorGraphTraverser.evaluation.batch_runner import merge_results_tree
+            merge_results_tree(str(root / "merged_results.json"))
+        return len(all_results), len(results_files)
 
     merged_path = Path("results/merged_results.json")
     if not dry_run:

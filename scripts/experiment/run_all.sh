@@ -12,6 +12,14 @@
 #   ./scripts/experiment/run_all.sh --sample 3   # 3 questions per task type (smoke test)
 #   ./scripts/experiment/run_all.sh --no-judge   # skip judge pass entirely
 #   ./scripts/experiment/run_all.sh --judge-only # skip model eval, run judge only
+#   ./scripts/experiment/run_all.sh --conditions "tool_resolved"   # override conditions
+#   ./scripts/experiment/run_all.sh --models "x-ai/grok-4.20:grok-4.20"  # subset of models
+#   ./scripts/experiment/run_all.sh --results-root results_revision \
+#       --conditions "tool_resolved tool_rerun" --pairs results_revision/rerun_pairs.csv
+#
+# Follow-up runs (any condition other than no_tool/tool, or --pairs) must use
+# --results-root results_revision so they never merge into the original
+# results/merged_results.json.
 #
 # Logs: results/run_<timestamp>/logs/<model>.log
 # Results: results/run_<timestamp>/<model>/results.json
@@ -27,6 +35,10 @@ SAMPLE_FLAG=""
 JUDGE_FLAG="--no-judge"   # always skip inline judge; run standalone pass after
 SKIP_EVAL=false
 SKIP_JUDGE=false
+CONDITIONS="no_tool tool"
+MODELS_OVERRIDE=""
+RESULTS_ROOT="results"
+PAIRS=""
 EXTRA_FLAGS=""
 YES=false
 while [[ $# -gt 0 ]]; do
@@ -34,6 +46,10 @@ while [[ $# -gt 0 ]]; do
         --sample)        SAMPLE_FLAG="--sample $2"; shift 2 ;;
         --no-judge)      SKIP_JUDGE=true;           shift   ;;
         --judge-only)    SKIP_EVAL=true;            shift   ;;
+        --conditions)    CONDITIONS="$2";           shift 2 ;;
+        --models)        MODELS_OVERRIDE="$2";      shift 2 ;;
+        --results-root)  RESULTS_ROOT="$2";         shift 2 ;;
+        --pairs)         PAIRS="$2";                shift 2 ;;
         --yes|-y)        YES=true;                  shift   ;;
         -h|--help)
             sed -n '2,20p' "$0"; exit 0 ;;
@@ -44,7 +60,7 @@ done
 
 # ── Config ────────────────────────────────────────────────────────────────────
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
-RUN_DIR="results/run_${RUN_TS}"
+RUN_DIR="${RESULTS_ROOT}/run_${RUN_TS}"
 LOG_DIR="${RUN_DIR}/logs"
 mkdir -p "$LOG_DIR"
 
@@ -67,15 +83,19 @@ MODELS=(
     "anthropic/claude-sonnet-4.6:claude-sonnet-4.6"
     "openai/gpt-5.4:gpt-5.4"
     "google/gemini-3-flash-preview:gemini-3-flash-preview"
-    "x-ai/grok-4.1-fast:grok-4.1-fast"
+    "x-ai/grok-4.20:grok-4.20"
     "openai/gpt-oss-120b:gpt-oss-120b"
     "qwen/qwen3.5-397b-a17b:qwen3.5-397b-a17b"
     "moonshotai/kimi-k2.5:kimi-k2.5"
     "meta-llama/llama-4-maverick:llama-4-maverick"
     "deepseek/deepseek-v3.2:deepseek-v3.2"
-    "mistralai/mistral-medium-3.1:mistral-medium-3.1"
+    "mistralai/mistral-medium-3-5:mistral-medium-3.5"
     "nvidia/nemotron-3-super-120b-a12b:nemotron-3-super-120b-a12b"
 )
+
+if [[ -n "$MODELS_OVERRIDE" ]]; then
+    read -r -a MODELS <<< "$MODELS_OVERRIDE"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo "════════════════════════════════════════════════════════════════════════"
@@ -84,8 +104,10 @@ echo "════════════════════════�
 echo " Run dir:    $RUN_DIR"
 echo " Questions:  $QUESTIONS"
 echo " Models:     ${#MODELS[@]}"
-echo " Conditions: no_tool  tool"
-if [[ -n "$SAMPLE_FLAG" ]]; then
+echo " Conditions: $CONDITIONS"
+if [[ -n "$PAIRS" ]]; then
+    echo " Mode:       SELECTIVE (--pairs $PAIRS)"
+elif [[ -n "$SAMPLE_FLAG" ]]; then
     echo " Mode:       SAMPLE ($SAMPLE_FLAG)"
 else
     echo " Mode:       FULL (275 questions)"
@@ -131,9 +153,11 @@ if ! $SKIP_EVAL; then
             --questions "$QUESTIONS" \
             --graph "$GRAPH" \
             --models "$model_id" \
-            --conditions no_tool tool \
+            --conditions $CONDITIONS \
             --output "$out_dir" \
             --models-config configs/models.yaml \
+            --run-tag "run_${RUN_TS}" \
+            ${PAIRS:+--pairs "$PAIRS"} \
             $SAMPLE_FLAG \
             $JUDGE_FLAG \
             $EXTRA_FLAGS \
@@ -172,7 +196,7 @@ else
     echo "   Re-run failed models individually — cache will resume from checkpoint"
 fi
 echo " Results: $RUN_DIR"
-echo " Merged:  results/merged_results.json"
+echo " Merged:  ${RESULTS_ROOT}/merged_results.json"
 echo "════════════════════════════════════════════════════════════════════════"
 
 # ── Judge pass ────────────────────────────────────────────────────────────────
@@ -184,7 +208,28 @@ if ! $SKIP_JUDGE; then
     JUDGE_LOG="${LOG_DIR}/judge.log"
     echo " Judge log: $JUDGE_LOG"
     echo ""
-    python scripts/run_judge.py --run "$RUN_DIR" --yes 2>&1 | tee "$JUDGE_LOG"
+    # Same 3-judge panel as the original run; final F score = mean of the three.
+    JUDGES=(
+        "anthropic/claude-opus-4.6:8192"
+        "google/gemini-3.1-pro-preview:32768"
+        "openai/gpt-5.4-pro:8192"
+    )
+    for entry in "${JUDGES[@]}"; do
+        judge_id="${entry%%:*}"
+        judge_max="${entry##*:}"
+        echo "▶ Judge: $judge_id (max tokens $judge_max)" | tee -a "$JUDGE_LOG"
+        python scripts/run_judge.py --run "$RUN_DIR" --judge-model "$judge_id" \
+            --max-tokens "$judge_max" --yes 2>&1 | tee -a "$JUDGE_LOG"
+    done
+    echo "Check every F record has all 3 judge scores:" | tee -a "$JUDGE_LOG"
+    python scripts/revision/check_judge_coverage.py --run "$RUN_DIR" \
+        --judges "${JUDGES[@]%%:*}" 2>&1 | tee -a "$JUDGE_LOG"
+    if [[ "$RESULTS_ROOT" != "results" ]]; then
+        # Fold judge scores into results.json and refresh ${RESULTS_ROOT}/merged_results.json
+        python scripts/rebuild_results.py --run "$RUN_DIR" 2>&1 | tee -a "$JUDGE_LOG"
+    else
+        echo "Next: python scripts/rebuild_results.py --run $RUN_DIR (writes results/merged_results.json)"
+    fi
     echo ""
     echo "════════════════════════════════════════════════════════════════════════"
     echo " ✓ JUDGE PASS COMPLETE"

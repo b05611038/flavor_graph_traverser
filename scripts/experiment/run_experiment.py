@@ -13,6 +13,10 @@ Usage:
 
     # With OpenRouter
     python scripts/run_experiment.py --client openrouter --models anthropic/claude-sonnet-4.6 --conditions no_tool tool
+
+    # Selective re-run of (model, condition, question_id) triples from a CSV
+    python scripts/experiment/run_experiment.py --client openrouter --models anthropic/claude-sonnet-4.6 \
+        --conditions tool_resolved --pairs results_revision/rerun_pairs.csv
 """
 
 import sys
@@ -31,6 +35,24 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from FlavorGraphTraverser.evaluation import BatchRunner
+from FlavorGraphTraverser.evaluation.utils import load_conditions_config
+
+
+def load_pairs(path):
+    """Read a selective re-run CSV with columns model, condition, question_id.
+
+    Returns {(model, condition): {question_id, ...}}.
+    """
+    import csv
+    pairs = {}
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        missing = {"model", "condition", "question_id"} - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"{path}: missing column(s) {sorted(missing)}")
+        for row in reader:
+            pairs.setdefault((row["model"], row["condition"]), set()).add(row["question_id"])
+    return pairs
 
 
 def main():
@@ -68,8 +90,41 @@ def main():
         "--conditions",
         nargs="+",
         required=True,
-        choices=["no_tool", "tool"],
-        help="Conditions to test (no_tool=baseline, tool=tool-augmented)"
+        choices=list(load_conditions_config()["conditions"]),
+        help="Conditions to test (defined in configs/conditions.yaml)"
+    )
+
+    parser.add_argument(
+        "--allow-draft",
+        action="store_true",
+        help="Allow conditions marked draft: true in conditions.yaml (prompt wording not final)"
+    )
+
+    parser.add_argument(
+        "--merged-path",
+        default=None,
+        help="Consolidated results file to refresh after each save "
+             "(default: <first component of --output>/merged_results.json, e.g. "
+             "results/merged_results.json or results_revision/merged_results.json)"
+    )
+
+    parser.add_argument(
+        "--no-merge",
+        action="store_true",
+        help="Do not refresh any merged results file"
+    )
+
+    parser.add_argument(
+        "--run-tag",
+        default=None,
+        help="Label stamped into run_meta.run_tag of each new result"
+    )
+
+    parser.add_argument(
+        "--pairs",
+        metavar="CSV",
+        help="Selective re-run: CSV with columns model, condition, question_id; "
+             "only the listed triples are evaluated"
     )
 
     parser.add_argument(
@@ -138,9 +193,42 @@ def main():
 
     args = parser.parse_args()
 
+    # Refuse draft conditions unless explicitly allowed
+    conditions_cfg = load_conditions_config()["conditions"]
+    drafts = [c for c in args.conditions if conditions_cfg[c].get("draft")]
+    if drafts and not args.allow_draft:
+        print(f"❌ Condition(s) {drafts} are marked draft in configs/conditions.yaml "
+              f"(prompt wording not final). Pass --allow-draft for test runs only.")
+        return 1
+
+    only_pairs = load_pairs(args.pairs) if args.pairs else None
+
     # Auto-generate timestamped output dir if not specified
     if args.output is None:
         args.output = f"results/experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    # Merged results file lives at the root of the output tree
+    if args.no_merge:
+        merged_path = None
+    elif args.merged_path:
+        merged_path = args.merged_path
+    elif Path(args.output).parts[0] == "results_revision":
+        # A default results_revision/merged_results.json would mix the pilot and all
+        # rounds (keys collide across rounds). Follow-up runs merge per round via
+        # scripts/revision/run_revision.py --merge.
+        print("❌ Output under results_revision/ needs --no-merge or an explicit --merged-path "
+              "(use scripts/revision/run_revision.py, which merges each round separately).")
+        return 1
+    else:
+        merged_path = str(Path(Path(args.output).parts[0]) / "merged_results.json")
+    if merged_path and Path(merged_path).resolve() == Path("results/merged_results.json").resolve():
+        revision_conditions = [c for c in args.conditions if c not in ("no_tool", "tool")]
+        if revision_conditions or only_pairs is not None:
+            print(f"❌ Revision run (conditions {revision_conditions or args.conditions}"
+                  f"{', --pairs' if only_pairs is not None else ''}) would merge into the original "
+                  f"results/merged_results.json. Use --output results_revision/<run> "
+                  f"(or --merged-path / --no-merge).")
+            return 1
 
     # Validate files exist
     if not Path(args.questions).exists():
@@ -265,9 +353,29 @@ def main():
         data = json.load(f)
         n_questions = len(data["questions"])
 
-    n_evaluations = n_questions * len(args.models) * len(args.conditions)
-    print(f"Expected evaluations: {n_evaluations}")
-    print(f"  ({n_questions} questions × {len(args.models)} models × {len(args.conditions)} conditions)")
+    if only_pairs is None:
+        n_evaluations = n_questions * len(args.models) * len(args.conditions)
+        print(f"Expected evaluations: {n_evaluations}")
+        print(f"  ({n_questions} questions × {len(args.models)} models × {len(args.conditions)} conditions)")
+    else:
+        known_ids = {q.get("id") for q in data["questions"]}
+        n_evaluations = sum(
+            len(only_pairs.get((m, c), set()) & known_ids)
+            for m in args.models for c in args.conditions
+        )
+        unknown = set().union(*only_pairs.values()) - known_ids if only_pairs else set()
+        print(f"Expected evaluations: {n_evaluations} (selective re-run from {args.pairs})")
+        if unknown:
+            print(f"⚠ {len(unknown)} question id(s) in {args.pairs} not found in {questions_file}")
+        skipped = {k: len(v) for k, v in only_pairs.items()
+                   if k[0] not in args.models or k[1] not in args.conditions}
+        if skipped:
+            print(f"⚠ {sum(skipped.values())} row(s) in {args.pairs} will NOT run "
+                  f"(model or condition not selected on the command line):")
+            for (m, c), n in sorted(skipped.items()):
+                print(f"    {m} / {c}: {n}")
+        if args.sample or args.max_questions:
+            print("⚠ --sample/--max-questions further restricts the --pairs selection")
     print()
 
     # Estimate time/cost
@@ -314,7 +422,9 @@ def main():
         graph_file=args.graph,
         output_dir=args.output,
         enable_cache=not args.no_cache,
-        verbose=not args.quiet
+        verbose=not args.quiet,
+        merged_path=merged_path,
+        run_tag=args.run_tag,
     )
 
     # Apply sampling if requested
@@ -339,6 +449,8 @@ def main():
             judge_base_url=None if judge_client_type == "openrouter" else args.base_url,
             judge_api_key=judge_api_key,
             tool_modes=tool_modes or None,
+            only_pairs=only_pairs,
+            allow_draft=args.allow_draft,
         )
 
         print()

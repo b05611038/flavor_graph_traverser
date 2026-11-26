@@ -19,8 +19,11 @@ def project_root():
 
 @pytest.fixture(scope="session")
 def coffee_flavor_wheel_path(project_root):
-    """Get path to coffee_flavor_wheel graph."""
-    return project_root / "data" / "graphs" / "coffee_flavor_wheel.json"
+    """Get path to coffee_flavor_wheel graph (from the data package); skip the test if it is not present."""
+    path = project_root / "data" / "graphs" / "coffee_flavor_wheel.json"
+    if not path.exists():
+        pytest.skip(f"Graph file not found: {path} (data package not unpacked)")
+    return path
 
 
 @pytest.fixture(scope="session")

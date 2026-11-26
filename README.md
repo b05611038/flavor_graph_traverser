@@ -19,7 +19,7 @@ A Python library for representing and traversing coffee flavor hierarchies as di
 
 **Data and reproducibility:**
 - Benchmark dataset: https://doi.org/10.5281/zenodo.20339333
-- Reproducibility data and code: https://doi.org/10.5281/zenodo.20338516
+- Reproducibility data and code: https://doi.org/10.5281/zenodo.24577993
 
 ---
 
@@ -43,23 +43,28 @@ For full methodology, design rationale, and findings, see the paper (citation wi
 
 ## Leaderboard
 
-Macro score (0–100) averaged equally across 9 task types. Sorted by no-tool score.
+Benchmark score (0–100; the mean of the nine task-type scores), mean over three runs, sorted by no-tool score.
+Tool: the model can query the flavor wheel through graph tools. Wheel-in-context: the whole wheel is placed in the
+prompt instead. The paper reports these scores as context for the effect of the wheel on each model, not as a
+ranking of models.
 
-| Model | No-tool | Tool | Δ |
-|---|---:|---:|---:|
-| Gemini 3 Flash Preview | 64.8 | 59.6 | −5.2 |
-| GPT-OSS 120B | 64.3 | 52.0 | −12.3 |
-| Claude Sonnet 4.6 | 63.6 | 54.9 | −8.7 |
-| GPT-5.4 | 63.0 | 52.6 | −10.5 |
-| Kimi K2.5 | 62.4 | 57.0 | −5.3 |
-| Qwen3.5 397B | 60.5 | 53.3 | −7.2 |
-| Mistral Medium 3.1 | 59.8 | 45.6 | −14.2 |
-| Llama 4 Maverick | 59.3 | 51.9 | −7.4 |
-| Grok 4.1 Fast | 56.9 | 50.6 | −6.4 |
-| Nemotron 3 Super 120B | 56.5 | 54.5 | −2.0 |
-| DeepSeek V3.2 | 56.3 | 47.5 | −8.7 |
+| Model | No-tool | Tool | Δ | Wheel-in-context | Δ |
+|---|---:|---:|---:|---:|---:|
+| Gemini 3 Flash Preview | 64.0 | 61.3 | −2.8 | 55.8 | −8.2 |
+| GPT-5.4 | 63.9 | 52.3 | −11.6 | 58.0 | −5.9 |
+| Claude Sonnet 4.6 | 63.1 | 54.8 | −8.3 | 53.9 | −9.2 |
+| Mistral Medium 3.5 | 62.5 | 44.6 | −17.9 | 50.2 | −12.3 |
+| GPT-OSS 120B | 62.4 | 48.3 | −14.0 | 51.1 | −11.3 |
+| Kimi K2.5 | 61.9 | 54.0 | −7.8 | 56.7 | −5.2 |
+| Qwen3.5 397B | 61.3 | 54.6 | −6.7 | 59.9 | −1.4 |
+| Llama 4 Maverick | 59.7 | 52.8 | −6.9 | 55.4 | −4.3 |
+| Nemotron 3 Super 120B | 58.5 | 46.5 | −12.0 | 49.4 | −9.1 |
+| DeepSeek V3.2 | 58.1 | 47.6 | −10.6 | 47.8 | −10.3 |
+| Grok 4.20 | 56.1 | 54.7 | −1.4 | 53.9 | −2.2 |
 
-Tool access produced a **negative Δ for all 11 models** at the aggregate level. For the task-level breakdown and interpretation of why this happens, see the paper (citation will be updated upon publication).
+Giving the wheel to the model produced a **negative Δ for all 11 models**, both as a tool (mean −9.1) and in the
+prompt (mean −7.2). For the task-level breakdown and why this happens, see the paper (citation will be updated upon
+publication).
 
 ---
 
@@ -74,17 +79,19 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Set up the benchmark questions
+### 2. Get the data
 
-The benchmark questions are included in the repo at `data/dataset_release/benchmark_questions.json`. Copy them to the expected location:
+The study data are not stored in this repository. Download the data package from Zenodo (see the
+*Data and reproducibility* links above) and unpack it at the repository root; it mirrors the repository's
+folder layout:
 
 ```bash
-cp data/dataset_release/benchmark_questions.json data/questions/benchmark_questions.json
+unzip FlavorReasonBench-coffee_data.zip    # creates data/, results_revision/ and reproduce/
 ```
 
-Alternatively, download directly from the dataset record:
-
-> https://doi.org/10.5281/zenodo.20339333
+This provides the benchmark questions (`data/questions/benchmark_questions.json`), the tool-graph
+(`data/graphs/coffee_flavor_wheel.json`), the answer-bearing part of the benchmark graph
+(`data/graphs/answer_subgraph.json`), and the transcripts of every evaluation reported in the paper.
 
 ### 3. Option A — Cloud LLMs via OpenRouter
 
@@ -151,7 +158,6 @@ Running the full 275-question benchmark on a single model costs roughly **$0.25�
 | Model | Approx. cost (275 q) |
 |---|---|
 | GPT-OSS 120B | ~$0.24 |
-| Grok 4.1 Fast | ~$0.77 |
 | Gemini 3 Flash Preview | ~$3.66 |
 | Claude Sonnet 4.6 | ~$18.97 |
 
@@ -169,7 +175,7 @@ Running the full 275-question benchmark on a single model costs roughly **$0.25�
 ### F-category scoring (open-ended questions)
 
 The 15 F-category questions are scored by an LLM judge (0–5 rubric). By default the judge model is read from `configs/models.yaml`. If you do not have a judge model configured, either:
-- Pass `--judge-model anthropic/claude-opus-4.6` (OpenRouter), or
+- Pass `--judge-model anthropic/claude-opus-5.5` (OpenRouter), or
 - Pass `--no-judge` to skip F-category scoring entirely (A/E task results are unaffected).
 
 ### Results
@@ -178,6 +184,25 @@ Results are saved to `results/experiment_YYYYMMDD_HHMMSS/results.json`. The top-
 - `macro_score` — equal-weighted mean across 9 task types (primary metric in the paper)
 - `by_condition` — scores split by `no_tool` vs `tool`
 - `by_task_type` — per-task-type breakdown (A1–A5, E1–E3, F)
+
+---
+
+## Reproducing the Paper's Numbers
+
+With the data package unpacked at the repository root (step 2 above):
+
+```bash
+pip install -r requirements.txt -r requirements-analysis.txt
+pip install -e .
+cd reproduce
+jupyter nbconvert --to notebook --execute reproduce.ipynb --output reproduce.ipynb
+jupyter nbconvert --to notebook --execute reproduce_check.ipynb --output reproduce_check.ipynb
+```
+
+The two notebooks (part of the data package) rebuild every analysis output from the transcripts with the scripts in
+`scripts/revision/`. `reproduce.ipynb` shows how each figure and table of the paper is produced (figure panels drawn
+by `scripts/revision/figures_fig3.py`, supplementary tables rebuilt in the paper's layout, worked examples printed
+from the transcripts); `reproduce_check.ipynb` recomputes every number reported in the paper. No API key is needed.
 
 ---
 
@@ -311,10 +336,9 @@ configs/                        # YAML configuration files
 └── README.md                   # Configuration guide
 
 data/
-├── graphs/                     # Graph files (tracked: .json; excluded: .pkl)
-├── dataset_release/            # Public benchmark questions (tracked)
+├── graphs/                     # Graph files (from the data package; example_graph.json is tracked)
 ├── filtering/                  # Filtered nodes + exception lists
-└── questions/                  # Runtime question files (excluded from git)
+└── questions/                  # Question files (from the data package; example_questions.json is tracked)
 
 scripts/                        # Executable scripts
 ├── experiment/
@@ -340,6 +364,15 @@ scripts/                        # Executable scripts
 │   ├── flavor_filter.py             # Hierarchical flavor filtering
 │   └── clean_orphaned_audit_entries.py
 └── run_tests.sh                # Test runner
+
+scripts/revision/               # Follow-up runs and the analysis behind the paper's numbers
+├── run_revision.py             # Launch one round of the follow-up runs
+├── run_judges.py               # T3 judging by the three-judge panel
+├── analyze_revision.py         # Assemble all evaluations and write the analysis report
+├── manuscript_tables.py        # Values of the supplementary tables
+├── figures_fig3.py             # Panels of Fig. 3 and Fig. 4b
+├── answer_subgraph.py          # Extract the answer-bearing subgraph; re-derive every answer key
+└── ...                         # Helpers (judge scores, re-run selection, prompt-only flags)
 
 tests/                          # Test suite
 ├── client/                     # Client layer tests
@@ -397,10 +430,10 @@ System prompts follow MMLU/τ-bench conventions: neutral framing (`"The followin
 Three tools exposed to LLMs:
 
 1. **`validate_descriptors`** (no call limit) — check if descriptors exist in graph
-2. **`get_parent`** (counts toward budget, max 5 shared) — get parent node(s) of a descriptor
-3. **`get_children`** (counts toward budget, max 5 shared) — get child node(s) of a descriptor
+2. **`get_parent`** (traversal call) — get parent node(s) of a descriptor
+3. **`get_children`** (traversal call) — get child node(s) of a descriptor
 
-The tool call budget is injected dynamically into the system prompt. When the budget is exhausted, an emphatic forced-answer message is sent; if the model still returns empty, a context-surgery fallback strips tool history and queries with a clean prompt.
+The two traversal tools share a budget of five calls per question. The system prompt tells the model only that the budget is limited (`prompts/tool_budget.txt`). The harness checks the budget between model turns, so calls the model requests together in one turn all run, and a question can end slightly above five calls. When the budget is exhausted, an emphatic forced-answer message is sent; if the model still returns empty, a context-surgery fallback strips tool history and queries with a clean prompt.
 
 ### Scoring
 

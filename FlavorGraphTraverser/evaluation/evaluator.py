@@ -5,18 +5,19 @@ Evaluates a single question under a specific condition.
 Implements the turn-based evaluation loop from Implementation Guide.
 """
 
+import hashlib
 import json
 import time
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from .client import BaseClient, Message, LLMResponse
-from .tools import GraphToolExecutor, get_tool_definitions, TOOL_VALIDATE, TOOL_GET_PARENT, TOOL_GET_CHILDREN
+from .tools import GraphToolExecutor, get_tool_definitions, render_graph, DEFAULT_DISPLAY_CORRECTIONS, LabelResolver, TOOL_VALIDATE, TOOL_GET_PARENT, TOOL_GET_CHILDREN
 from .utils import (
     parse_answer, AnswerParseResult,
     parse_multiselect_answer, MultiSelectParseResult,
     compute_question_score,
-    load_conditions_config,
+    load_conditions_config, condition_fingerprint,
     build_icl_system_prompt, format_icl_tool_result, parse_icl_tool_call,
 )
 from .judge import LLMJudge, JudgeResult
@@ -84,6 +85,11 @@ class EvaluationResult:
     # None for older cached results that predate this field.
     resolved_model: Optional[str] = None
 
+    # Provenance of the condition that produced this result:
+    # condition_fingerprint, label_resolution, draft, graph_render_format, run_tag.
+    # None for results produced before this field existed (April 2026 run).
+    run_meta: Optional[Dict[str, Any]] = None
+
 
 class QuestionEvaluator:
     """
@@ -142,14 +148,38 @@ class QuestionEvaluator:
         # Get tools if enabled
         self.tools = get_tool_definitions() if self.condition_config["tools_enabled"] else None
 
+        # Base system prompt; graph_in_context conditions get the rendered tool
+        # graph substituted for the GRAPH_PLACEHOLDER token.
+        self.system_prompt = self._build_system_prompt()
+
+        # Provenance stamped onto every result
+        self.run_meta: Dict[str, Any] = {
+            "condition_fingerprint": condition_fingerprint(
+                self.condition_config, self.common_config, self.content_fingerprint_inputs()),
+            # from the executor actually used, not the config
+            "label_resolution": "resolve" if getattr(executor, "resolver", None) is not None else "exact",
+            "draft": bool(self.condition_config.get("draft", False)),
+        }
+        if self.condition_config.get("graph_in_context"):
+            self.run_meta["graph_render_format"] = self.condition_config["graph_render_format"]
+            self.run_meta["graph_names"] = self.condition_config.get("graph_names", "as_stored")
+            self.run_meta["graph_aliases"] = self.condition_config.get("graph_aliases", "none")
+
         # Resolved model ID from API (set on first successful response)
         self._resolved_model: Optional[str] = None
+        self._served: List[Dict[str, Optional[str]]] = []
         
     def _query(self, messages, **kwargs):
         """Wrapper around client.query that captures the resolved model ID on first call."""
         response = self.client.query(messages, **kwargs)
         if self._resolved_model is None and getattr(response, "resolved_model", None):
             self._resolved_model = response.resolved_model
+        # Per-evaluation record of what actually served each call (model drift / provider
+        # routing checks across runs)
+        served = {"model": getattr(response, "resolved_model", None), "provider": getattr(response, "provider", None)}
+        if isinstance(served["model"], str) or isinstance(served["provider"], str):
+            if served not in self._served:
+                self._served.append(served)
         return response
 
     def evaluate(self, question: Dict[str, Any]) -> EvaluationResult:
@@ -163,6 +193,7 @@ class QuestionEvaluator:
             EvaluationResult with answer, correctness, and metrics
         """
         start_time = time.time()
+        self._served: List[Dict[str, Optional[str]]] = []
         metrics = EvaluationMetrics()
         errors = []
         messages = []  # ensure messages is always bound for the except block
@@ -200,6 +231,10 @@ class QuestionEvaluator:
                 judge_score, judge_result_dict, status = self._run_judge(
                     question, model_response_text, errors
                 )
+                if any(e.get("type") == "api_error" for e in errors):
+                    # The conversation was cut off by an API failure (e.g. out of credit):
+                    # the text is not a finished answer, whether or not a judge ran.
+                    status = "api_error"
                 model_answer = None
                 is_correct = (judge_score >= JUDGE_PASS_THRESHOLD) if judge_score is not None else False
 
@@ -241,6 +276,11 @@ class QuestionEvaluator:
                 else:
                     is_correct = False
                     status = "parse_error"
+                if any(e.get("type") == "api_error" for e in errors):
+                    # Cut off by an API failure: any parsed answer comes from an unfinished
+                    # conversation (as for single-choice questions below).
+                    is_correct = False
+                    status = "api_error"
                 judge_score = None
                 judge_result_dict = None
                 parse_result = ms_result  # store multiselect parse result, not single-choice
@@ -292,6 +332,7 @@ class QuestionEvaluator:
                 model=self.client.model,
                 condition=self.condition,
                 resolved_model=self._resolved_model,
+                run_meta=dict(self.run_meta, served=list(getattr(self, '_served', []))),
                 question_text=question.get("text", ""),
                 options=question.get("options", {}),
                 correct_answer=question.get("correct_answer", ""),
@@ -317,6 +358,7 @@ class QuestionEvaluator:
                 model=self.client.model,
                 condition=self.condition,
                 resolved_model=self._resolved_model,
+                run_meta=dict(self.run_meta, served=list(getattr(self, '_served', []))),
                 question_text=question.get("text", ""),
                 options=question.get("options", {}),
                 correct_answer=question.get("correct_answer", ""),
@@ -435,10 +477,77 @@ class QuestionEvaluator:
 
         return judge_result.score, judge_result_dict, status
 
+    def content_fingerprint_inputs(self) -> Dict[str, Any]:
+        """What the model sees beyond the condition config: the rendered system prompt
+        of graph_in_context conditions and the resolver tables of a resolving executor.
+        Empty for conditions without either, so their fingerprints are unchanged."""
+        content: Dict[str, Any] = {}
+        if self.condition_config.get("graph_in_context"):
+            content["system_prompt_sha256"] = hashlib.sha256(self.system_prompt.encode("utf-8")).hexdigest()
+        resolver = getattr(self.executor, "resolver", None)
+        if resolver is not None:
+            # The complete lookup behaviour: every key -> node (nodes, layer and ring forms,
+            # aliases, word forms, plurals), the separator-fallback index, and the names shown.
+            content["resolver"] = {
+                "index": sorted(resolver._index.items()),
+                "compact_index": sorted(resolver._compact_index.items()),
+                "display_corrections": sorted(resolver.display_corrections.items()),
+            }
+        return content
+
+    GRAPH_PLACEHOLDER = "{tool_graph}"
+    ALIASES_PLACEHOLDER = "{name_aliases}"
+
+    def _build_system_prompt(self) -> str:
+        """Condition system prompt, with the tool graph inlined if graph_in_context."""
+        prompt = self.condition_config.get("system_prompt") or ""
+        if self.condition_config.get("graph_in_context"):
+            if self.GRAPH_PLACEHOLDER not in prompt:
+                raise ValueError(
+                    f"Condition '{self.condition}' sets graph_in_context but its system_prompt "
+                    f"has no {self.GRAPH_PLACEHOLDER} placeholder"
+                )
+            names = self.condition_config.get("graph_names", "as_stored")
+            if names not in ("as_stored", "corrected"):
+                raise ValueError(f"graph_names must be 'as_stored' or 'corrected', got '{names}'")
+            if "graph_render_format" not in self.condition_config:
+                raise ValueError(f"Condition '{self.condition}' sets graph_in_context but no graph_render_format")
+            rendered = render_graph(
+                self.executor.graph,
+                self.condition_config["graph_render_format"],
+                name_map=DEFAULT_DISPLAY_CORRECTIONS if names == "corrected" else None,
+            )
+            prompt = prompt.replace(self.GRAPH_PLACEHOLDER, rendered)
+
+            # graph_aliases: resolver -> show the name mappings LabelResolver applies to
+            # tool queries (bare layer labels, benchmark spellings), generated from the
+            # same table, so in-context and tool_resolved get the same name knowledge.
+            aliases = self.condition_config.get("graph_aliases", "none")
+            if aliases not in ("none", "resolver"):
+                raise ValueError(f"graph_aliases must be 'none' or 'resolver', got '{aliases}'")
+            if aliases == "resolver":
+                if self.ALIASES_PLACEHOLDER not in prompt:
+                    raise ValueError(
+                        f"Condition '{self.condition}' sets graph_aliases but its system_prompt "
+                        f"has no {self.ALIASES_PLACEHOLDER} placeholder"
+                    )
+                table = LabelResolver.from_graph(self.executor.graph).alias_table()
+                if names != "corrected":
+                    raise ValueError("graph_aliases: resolver requires graph_names: corrected "
+                                     "(alias targets are shown with corrected spellings)")
+                prompt = prompt.replace(self.ALIASES_PLACEHOLDER, json.dumps(table, indent=2, ensure_ascii=False))
+        elif self.condition_config.get("graph_aliases", "none") != "none":
+            raise ValueError(f"Condition '{self.condition}' sets graph_aliases without graph_in_context")
+        if self.GRAPH_PLACEHOLDER in prompt:
+            raise ValueError(f"Condition '{self.condition}' has an unfilled {self.GRAPH_PLACEHOLDER} placeholder")
+        if self.ALIASES_PLACEHOLDER in prompt:
+            raise ValueError(f"Condition '{self.condition}' has an unfilled {self.ALIASES_PLACEHOLDER} placeholder")
+        return prompt
+
     def _format_question(self, question: Dict[str, Any]) -> List[Message]:
         """Format question into initial messages."""
         # System message — inject tool call budget when tools are enabled
-        system_prompt = self.condition_config["system_prompt"].rstrip()
+        system_prompt = self.system_prompt.rstrip()
         if self.condition_config["tools_enabled"]:
             system_prompt += "\n" + load_prompt("tool_budget")
         messages = [Message(role="system", content=system_prompt)]

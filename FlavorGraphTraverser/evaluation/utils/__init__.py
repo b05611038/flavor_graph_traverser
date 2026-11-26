@@ -10,7 +10,7 @@ from .answer_parser import (
     parse_multiselect_answer, MultiSelectParseResult,
     compute_question_score,
 )
-from .config_loader import load_conditions_config
+from .config_loader import load_conditions_config, condition_fingerprint
 from .response_normalizer import normalize_response
 from .icl_tools import build_icl_system_prompt, format_icl_tool_result, parse_icl_tool_call
 
@@ -23,6 +23,7 @@ __all__ = [
     "MultiSelectParseResult",
     "compute_question_score",
     "load_conditions_config",
+    "condition_fingerprint",
     "normalize_response",
     "build_icl_system_prompt",
     "format_icl_tool_result",

@@ -1,0 +1,15 @@
+# Analysis and reproduction of the paper's numbers (scripts/revision/ and the reproduction notebook
+# in the data package). Versions are those the published results were produced and checked with
+# (Python 3.12). Install on top of requirements.txt:
+#     pip install -r requirements.txt -r requirements-analysis.txt
+pandas==2.2.2
+numpy==1.26.4
+scipy==1.17.1
+matplotlib==3.9.2
+scikit-learn==1.8.0
+krippendorff==0.8.2
+python-igraph==0.11.6
+PyYAML==6.0.3
+nbconvert==7.17.0
+nbformat==5.10.4
+ipykernel==7.1.0
